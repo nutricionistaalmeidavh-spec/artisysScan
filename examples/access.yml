@@ -45,13 +45,19 @@ api:
       method: GET
       path: /api/profile
       auth: required
+      actorId: user-a
       rateLimitProbe: 5
-    - id: users.create
-      method: POST
-      path: /api/users
+      bolaPath: /api/users/scan-other-user
+    - id: user.update
+      method: PATCH
+      path: /api/users/scan-user
       auth: required
+      actorId: user-a
       invalidBody:
         email: 42
+      massAssignmentBody:
+        role: superadmin
+        tenantId: tenant-b
 
 tenant:
   resources:
