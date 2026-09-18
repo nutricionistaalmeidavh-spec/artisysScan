@@ -1,0 +1,75 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://artisys.dev/schemas/artisys-scan-v1.schema.json",
+  "title": "ArtiSys Scan Manifest v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "product", "runtime", "capabilities", "qa", "release"],
+  "properties": {
+    "schema": { "const": 1 },
+    "product": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "type"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$"
+        },
+        "type": {
+          "enum": ["saas", "web", "desktop", "hybrid", "unknown"]
+        }
+      }
+    },
+    "runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["web", "desktop", "electron"],
+      "properties": {
+        "web": { "type": "boolean" },
+        "desktop": { "type": "boolean" },
+        "electron": { "type": "boolean" }
+      }
+    },
+    "capabilities": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["authentication", "rbac", "multitenant", "superadmin", "updater"],
+      "properties": {
+        "authentication": { "$ref": "#/$defs/capabilityFlag" },
+        "rbac": { "$ref": "#/$defs/capabilityFlag" },
+        "multitenant": { "$ref": "#/$defs/capabilityFlag" },
+        "superadmin": { "$ref": "#/$defs/capabilityFlag" },
+        "updater": { "$ref": "#/$defs/capabilityFlag" }
+      }
+    },
+    "qa": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["playwright"],
+      "properties": {
+        "playwright": { "type": "boolean" }
+      }
+    },
+    "release": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["installer"],
+      "properties": {
+        "installer": {
+          "enum": ["none", "nsis", "inno", "unknown"]
+        }
+      }
+    }
+  },
+  "$defs": {
+    "capabilityFlag": {
+      "anyOf": [
+        { "type": "boolean" },
+        { "const": "review" }
+      ]
+    }
+  }
+}

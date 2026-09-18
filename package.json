@@ -1,0 +1,29 @@
+{
+  "name": "artisys-scan",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "scan": "tsx apps/cli/src/index.ts",
+    "test": "node --import tsx --test",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "build": "tsc -p tsconfig.build.json",
+    "ci": "npm run typecheck && npm test && npm run build"
+  },
+  "dependencies": {
+    "ajv": "^8.17.1",
+    "yaml": "^2.8.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.18.3",
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.2"
+  }
+}
