@@ -20,11 +20,11 @@
 - [x] **8 — RBAC Scanner:** matriz atores/papéis × ações com teste HTTP direto, detecção de acesso negado aceito e divergência entre política e implementação.
 - [x] **9 — Multitenant Scanner:** pares A→B/B→A, substituição de `tenantId`/`resourceId`, isolamento read/create/update/delete e findings críticos para qualquer acesso cross-tenant bem-sucedido.
 - [x] **10 — Admin / Superadmin:** fronteira de privilégio, ações exclusivas, execução de auditoria configurada e evidência de trilha administrativa.
-- [ ] **11 — Desktop / Electron:** contextIsolation, sandbox, IPC, preload, navegação, filesystem, tokens e SQLite.
-- [ ] **12 — Installer Scanner:** build → instalador → instalação → execução → QA → security.
-- [ ] **13 — Update Scanner:** atualização, hash, restart, persistência, rollback, latest.yml e blockmap.
-- [ ] **14 — Reporter:** terminal, HTML, JSON, SARIF, JUnit, SBOM e evidências.
-- [ ] **15 — GitHub Actions:** quick/full/manual durante desenvolvimento, sem release automático.
+- [x] **11 — Desktop / Electron:** análise estática de `contextIsolation`, `nodeIntegration`, sandbox, webview, preload, IPC, navegação remota, `shell.openExternal`, persistência de tokens/logs e artefatos SQLite.
+- [x] **12 — Installer Scanner:** workflow declarativo e sem shell na ordem build → instalador → instalação → execução → QA → security; o instalador é produzido antes do QA e permanece como evidência mesmo se uma etapa posterior falhar.
+- [x] **13 — Update Scanner:** validação de `latest.yml`, `version`, `path`, `sha512`, instalador e blockmap; cenário adaptável de atualização, restart, persistência de dados e rollback.
+- [x] **14 — Reporter:** resumo no terminal e bundle com HTML, JSON, SARIF 2.1, JUnit, evidências e cópia preservada do SBOM CycloneDX.
+- [x] **15 — GitHub Actions:** `scan-quick` automático para push/PR, `scan-full` manual/reutilizável e `scan-manual` com perfis quick/full/release; workflow legado permanece somente como fallback manual e nenhum workflow publica release automaticamente.
 - [ ] **16 — Release Gate:** PASS/WARN/BLOCK com políticas críticas.
 - [ ] **17 — Fleet Scanner:** scan de múltiplos produtos em uma execução.
 - [ ] **18 — Dashboard:** visão central dos produtos e findings.
@@ -42,5 +42,9 @@ O discovery pode inferir tecnologias objetivamente observáveis, mas **não deve
 - Web Scanner executa baseline e probe CORS por `GET`; a reflexão ativa só roda com `--allow-active`.
 - O perfil `web --dast` executa ZAP Baseline em Docker; Nuclei só é incluído quando `--allow-active` também é fornecido.
 - API, RBAC, Multitenant e Admin/Superadmin não executam `POST`, `PUT`, `PATCH` ou `DELETE` sem `--allow-state-change`.
+- Desktop/Electron é análise estática do projeto e não inicializa o aplicativo alvo.
+- O Installer Scanner só executa comandos declarados pelo produto quando `--allow-project-exec` é fornecido; os processos usam `shell: false`.
+- A inspeção de artefatos de update é estática. O cenário de update/restart/rollback usa um adapter explícito do ambiente de teste.
+- O perfil `release` do GitHub Actions ainda é verificação manual; publicação automática só poderá ser habilitada após o Release Gate e a integração operacional planejada.
 - Tokens e credenciais não ficam no YAML. O contrato guarda somente nomes `tokenEnv`; os valores vêm de secrets do CI ou variáveis de ambiente locais.
 - Se uma etapa necessária é pulada ou uma credencial/ferramenta está ausente, o relatório fica `complete: false` em vez de declarar sucesso silenciosamente.
