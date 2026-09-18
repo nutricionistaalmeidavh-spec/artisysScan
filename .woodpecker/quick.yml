@@ -1,0 +1,13 @@
+when:
+  - event: push
+
+labels:
+  platform: windows/amd64
+  backend: local
+
+steps:
+  - name: verify
+    image: powershell
+    commands:
+      - npm install --no-audit --no-fund
+      - npm run ci
