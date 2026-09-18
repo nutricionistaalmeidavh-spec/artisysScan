@@ -4,7 +4,7 @@
 
 - **Push confiável:** Woodpecker self-hosted no agent Windows local.
 - **Pull request:** GitHub Actions hospedado para isolamento de código de PR.
-- **Operação pesada/release:** Woodpecker manual no agent Windows; release exige `privilege=elevated`.
+- **Operação pesada/release:** Woodpecker manual no mesmo agent Windows homologado.
 - **Regra:** a lógica do scan pertence ao CLI; CI apenas orquestra comandos.
 - **Fallback:** GitHub Actions permanece disponível manualmente e para PRs.
 
@@ -29,8 +29,20 @@
 - [x] **16 — Release Gate:** PASS/WARN/BLOCK com política padrão e override configurável.
 - [x] **17 — Fleet Scanner:** múltiplos produtos, concorrência limitada, falha isolada e decisão agregada.
 - [x] **18 — Dashboard:** HTML/JSON estático com visão central PASS/WARN/BLOCK e findings por produto.
-- [ ] **19 — Woodpecker:** workflows `quick`, `full`, `fleet` e `release-windows` estão no repositório; falta confirmar uma execução real após habilitação do projeto no servidor.
-- [ ] **20 — Migração operacional:** eventos já migrados no Git (`push` → Woodpecker; PR/manual → Actions); falta confirmar o primeiro `quick` real no Woodpecker.
+- [ ] **19 — Woodpecker:** repo habilitado, webhook/status confirmado e workflows preparados para o agent Windows homologado; falta o primeiro `quick` concluir porque a fila atual aguarda disponibilidade do agent.
+- [ ] **20 — Migração operacional:** `push` já aponta para Woodpecker e PR/manual para Actions; conclusão depende do primeiro `quick` Woodpecker verde.
+
+## Estado operacional Woodpecker — 2026-09-18
+
+Labels do agent homologado:
+
+```text
+platform=windows/amd64
+backend=local
+pilot=pdv-artisys
+```
+
+O status GitHub `ci/woodpecker/push/quick` confirma habilitação do repositório e webhook. O primeiro run permaneceu `pending`; `utilidades` também estava `pending` no mesmo período, enquanto o PDV já possui execução anterior com sucesso nesse agent. O launcher atual usa `WOODPECKER_MAX_WORKFLOWS=1`.
 
 ## Regra de segurança do discovery
 

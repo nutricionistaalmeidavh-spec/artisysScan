@@ -4,16 +4,18 @@ when:
 labels:
   platform: windows/amd64
   backend: local
-  privilege: elevated
+  pilot: pdv-artisys
 
 steps:
   - name: verify
-    image: powershell
+    image: powershell.exe
     commands:
+      - '$ErrorActionPreference = "Stop"'
       - npm install --no-audit --no-fund
       - npm run ci
   - name: release-readiness
-    image: powershell
+    image: powershell.exe
     commands:
+      - '$ErrorActionPreference = "Stop"'
       - npm run scan -- discover .
       - Write-Host "Release workflow validates the scanner engine only; target installer/update execution remains explicit and opt-in."

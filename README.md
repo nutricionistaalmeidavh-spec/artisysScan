@@ -4,7 +4,7 @@ Orquestrador open source e self-hosted para QA, segurança, descoberta de stack,
 
 ## Estado atual
 
-As Fases **0–18** estão implementadas e validadas no core. As Fases **19–20** estão implementadas no repositório, com a ativação do projeto no servidor Woodpecker ainda pendente de verificação externa.
+As Fases **0–18** estão implementadas e validadas no core. As Fases **19–20** estão implementadas no repositório e o projeto já está habilitado no servidor Woodpecker; falta apenas a primeira execução `quick` sair da fila e concluir no agent Windows.
 
 O ArtiSys Scan inclui:
 
@@ -100,9 +100,17 @@ O modelo de CI do repositório é:
 ```text
 trusted push ──────> Woodpecker Windows local
 manual heavy ─────> Woodpecker Windows local
-release manual ───> Woodpecker Windows local + privilege=elevated
+release manual ───> Woodpecker Windows local
 pull request ─────> GitHub Actions hosted runner
 manual fallback ──> GitHub Actions
+```
+
+O agent Windows atualmente homologado é selecionado por:
+
+```text
+platform=windows/amd64
+backend=local
+pilot=pdv-artisys
 ```
 
 Workflows Woodpecker:
@@ -110,11 +118,11 @@ Workflows Woodpecker:
 - `.woodpecker/quick.yml` — `push` confiável;
 - `.woodpecker/full.yml` — manual;
 - `.woodpecker/fleet.yml` — manual Fleet + Dashboard;
-- `.woodpecker/release-windows.yml` — manual e roteado ao agent elevado.
+- `.woodpecker/release-windows.yml` — manual no mesmo agent Windows homologado.
 
 O backend Woodpecker `local` executa comandos diretamente no host. Como este repositório é público, **nenhum workflow Woodpecker aceita `pull_request`**. PRs permanecem no GitHub Actions hospedado e isolado.
 
-A configuração de repositório está pronta. A ativação/validação no servidor `ci.artisys.dev` está documentada em `docs/WOODPECKER_ACTIVATION.md` e não deve ser considerada confirmada apenas pela presença dos YAMLs.
+O repositório já está habilitado em `ci.artisys.dev`: o GitHub recebe o status `ci/woodpecker/push/quick`. No primeiro teste operacional, tanto ArtiSys Scan quanto `utilidades` permaneceram `pending`; portanto o servidor/webhook estão funcionando e a pendência atual é a disponibilidade do agent Windows. O launcher existente limita o agent a um workflow simultâneo.
 
 ## Segurança de execução
 

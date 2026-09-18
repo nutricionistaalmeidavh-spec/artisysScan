@@ -6,18 +6,15 @@ Woodpecker is the primary CI for trusted pushes and manual heavy scans. GitHub A
 
 Current server: `https://ci.artisys.dev`.
 
-Current Windows agents are matched through workflow labels:
+The homologated Windows agent is matched by:
 
 ```text
 platform=windows/amd64
 backend=local
+pilot=pdv-artisys
 ```
 
-The release workflow additionally requires:
-
-```text
-privilege=elevated
-```
+The `pilot=pdv-artisys` label is the label currently advertised by the existing Windows agent. The name can be generalized later without changing the scanner engine, as long as the agent and workflow labels are changed together.
 
 ## Security boundary
 
@@ -32,19 +29,26 @@ Woodpecker 3.18 discovers multiple workflows from `.woodpecker/*.yml` by default
 - `quick.yml` — automatic trusted push verification;
 - `full.yml` — manual full engine verification;
 - `fleet.yml` — manual fleet scan + dashboard generation;
-- `release-windows.yml` — manual release-readiness workflow routed to the elevated Windows local agent.
+- `release-windows.yml` — manual release-readiness workflow on the same homologated Windows local agent.
 
-No workflow publishes a release automatically.
+All steps use `powershell.exe`, matching the already homologated PDV pipeline. No workflow publishes a release automatically.
 
-## Server-side activation checklist
+## Activation state — 2026-09-18
 
-1. Enable `nutricionistaalmeidavh-spec/artisysScan` in the Woodpecker server.
+The repository is enabled on `ci.artisys.dev` and the GitHub webhook/status integration is confirmed: commits receive the context `ci/woodpecker/push/quick` with a Woodpecker pipeline URL.
+
+At the time of the repository-side migration, the first ArtiSys Scan pipelines remained `pending`. A contemporaneous `utilidades` pipeline was also `pending`, while prior PDV pipelines on this agent had completed successfully. That indicates the server/webhook configuration is working and the remaining runtime dependency is the Windows agent becoming available to consume the queue.
+
+The existing agent launcher sets `WOODPECKER_MAX_WORKFLOWS=1`, so only one workflow can run at a time.
+
+## Server/agent checklist
+
+1. Keep `nutricionistaalmeidavh-spec/artisysScan` enabled in Woodpecker.
 2. Keep the default pipeline path `.woodpecker/`.
-3. Confirm a connected agent advertises `platform=windows/amd64` and `backend=local`.
-4. Confirm the release agent also advertises `privilege=elevated`.
-5. Do not enable or add pull request execution on the local backend for this public repository.
-6. Push a trusted commit and confirm `quick` completes.
-7. Start `full`, `fleet`, and `release-windows` manually and confirm each is routed to the intended agent.
+3. Ensure the Windows agent is connected and advertises `platform=windows/amd64`, `backend=local`, `pilot=pdv-artisys`.
+4. Do not add pull request execution on the local backend for this public repository.
+5. Confirm the queued `quick` changes from `pending` to `running/success` when the agent is online.
+6. Start `full`, `fleet`, and `release-windows` manually after `quick` is green.
 
 ## Optional local syntax verification
 
@@ -54,4 +58,4 @@ With Woodpecker CLI installed:
 woodpecker-cli exec --backend-engine local .woodpecker/quick.yml
 ```
 
-Server-side repository activation is an external Woodpecker setting and must be verified on the server/UI; repository files alone cannot prove that the project is enabled there.
+The repository/server enablement is confirmed through GitHub's Woodpecker commit status. A green agent execution is tracked separately from enablement.
