@@ -1,10 +1,6 @@
 name: scan-quick
 
 on:
-  push:
-    branches:
-      - main
-      - 'feat/**'
   pull_request:
   workflow_dispatch:
 
@@ -27,4 +23,5 @@ jobs:
       - name: Quick verification
         run: npm run ci
 
-# Development verification only. This workflow never publishes releases.
+# Hosted isolation for pull requests + manual fallback only.
+# Trusted push CI is handled by Woodpecker. This workflow never publishes releases.
