@@ -125,6 +125,46 @@ export async function runAdminScan(policy: AccessPolicyV1, options: {
     }
   }
 
+  for (const action of policy.actions.filter((item) => item.privileged && item.auditCheck)) {
+    const allowedActor = policy.actors.find((actor) => action.allowRoles.includes(actor.role));
+    if (!allowedActor) {
+      errors.push(`${action.id}: no allowed actor configured for audit verification`);
+      continue;
+    }
+    if (isStateChanging(action.method) && !options.allowStateChange) {
+      skipped += 1;
+      continue;
+    }
+    try {
+      const headers = resolveActorHeaders(allowedActor, env);
+      const actionResponse = await transport({
+        method: action.method,
+        url: joinUrl(policy.baseUrl, action.path),
+        headers,
+        kind: 'admin-audit-action',
+        ...(action.body !== undefined ? { body: action.body } : {}),
+      });
+      executed += 1;
+      if (!isSuccess(actionResponse.status)) {
+        errors.push(`${action.id}: allowed privileged actor could not execute action for audit verification (status ${actionResponse.status})`);
+        continue;
+      }
+      const auditCheck = action.auditCheck;
+      if (!auditCheck) continue;
+      const auditResponse = await transport({
+        method: auditCheck.method,
+        url: joinUrl(policy.baseUrl, auditCheck.path),
+        headers,
+        kind: 'admin-audit-check',
+      });
+      executed += 1;
+      const auditFinding = evaluateAuditCheck(action.id, auditResponse, allowedActor.id);
+      if (auditFinding) findings.push(auditFinding);
+    } catch (error) {
+      errors.push(`${action.id}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
   const complete = errors.length === 0 && skipped === 0;
   return { complete, passed: complete && findings.length === 0, findings, executed, skipped, errors };
 }
