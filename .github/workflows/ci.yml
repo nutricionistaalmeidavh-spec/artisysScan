@@ -1,11 +1,6 @@
-name: development-ci
+name: development-ci-legacy
 
 on:
-  push:
-    branches:
-      - main
-      - 'feat/**'
-  pull_request:
   workflow_dispatch:
 
 permissions:
@@ -27,5 +22,5 @@ jobs:
       - name: Typecheck, tests and build
         run: npm run ci
 
-# Intencionalmente não há publicação de release aqui.
-# Woodpecker será habilitado somente na fase operacional final.
+# Fallback manual. scan-quick.yml is the automatic development workflow.
+# Release publication remains intentionally absent.
