@@ -1,19 +1,24 @@
-import { resolve } from 'node:path';
+import { readFile, readdir } from 'node:fs/promises';
+import { dirname, resolve } from 'node:path';
 
 import { runAdminScan } from '../../../packages/admin/src/index.js';
 import { loadAccessPolicy } from '../../../packages/access-control/src/index.js';
 import { runApiScan } from '../../../packages/api/src/index.js';
 import { loadManifest } from '../../../packages/contracts/src/index.js';
 import { discoverProject } from '../../../packages/core/src/index.js';
+import { runDesktopScan } from '../../../packages/desktop/src/index.js';
+import { runInstallerWorkflow, type InstallerWorkflowConfig } from '../../../packages/installer/src/index.js';
 import { runQa } from '../../../packages/qa/src/index.js';
 import { runRbacScan } from '../../../packages/rbac/src/index.js';
+import { renderTerminal, writeReportBundle, type UnifiedReportInput } from '../../../packages/reporter/src/index.js';
 import { runSourceSecurity } from '../../../packages/security/src/index.js';
 import { runSupplyChain } from '../../../packages/supply-chain/src/index.js';
 import { runTenantScan } from '../../../packages/tenant/src/index.js';
+import { inspectUpdaterArtifacts } from '../../../packages/updater/src/index.js';
 import { runWebDast } from '../../../packages/web/src/dast.js';
 import { runWebScan } from '../../../packages/web/src/index.js';
 
-const USAGE = `Usage:\n  artisys-scan validate <manifest>\n  artisys-scan discover <root>\n  artisys-scan security <root>\n  artisys-scan supply-chain <root> [output-dir]\n  artisys-scan qa <root> [output-dir] --allow-project-exec\n  artisys-scan web <url> [output-dir] [--dast] [--allow-active]\n  artisys-scan api <access.yml> [--allow-state-change]\n  artisys-scan rbac <access.yml> [--allow-state-change]\n  artisys-scan tenant <access.yml> [--allow-state-change]\n  artisys-scan admin <access.yml> [--allow-state-change]\n`;
+const USAGE = `Usage:\n  artisys-scan validate <manifest>\n  artisys-scan discover <root>\n  artisys-scan security <root>\n  artisys-scan supply-chain <root> [output-dir]\n  artisys-scan qa <root> [output-dir] --allow-project-exec\n  artisys-scan web <url> [output-dir] [--dast] [--allow-active]\n  artisys-scan api <access.yml> [--allow-state-change]\n  artisys-scan rbac <access.yml> [--allow-state-change]\n  artisys-scan tenant <access.yml> [--allow-state-change]\n  artisys-scan admin <access.yml> [--allow-state-change]\n  artisys-scan desktop <root>\n  artisys-scan installer <workflow.json> --allow-project-exec\n  artisys-scan update-artifacts <latest.yml> [artifact-dir]\n  artisys-scan report <input.json> [output-dir]\n`;
 
 function reportExitCode(report: { complete: boolean; passed: boolean }): number {
   if (!report.complete) return 2;
@@ -102,6 +107,40 @@ export async function main(args: string[] = process.argv.slice(2)): Promise<numb
             : await runAdminScan(policy, { allowStateChange });
       process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
       return reportExitCode(report);
+    }
+
+    if (command === 'desktop') {
+      const report = await runDesktopScan(resolve(target));
+      process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
+      return reportExitCode(report);
+    }
+
+    if (command === 'installer') {
+      const config = JSON.parse(await readFile(resolve(target), 'utf8')) as InstallerWorkflowConfig;
+      const report = await runInstallerWorkflow(config, { allowProjectExecution: rest.includes('--allow-project-exec') });
+      process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
+      return reportExitCode(report);
+    }
+
+    if (command === 'update-artifacts') {
+      const latestPath = resolve(target);
+      const requestedDir = rest.find((value) => !value.startsWith('--'));
+      const artifactDir = resolve(requestedDir ?? dirname(latestPath));
+      const latestYml = await readFile(latestPath, 'utf8');
+      const files = await readdir(artifactDir);
+      const report = inspectUpdaterArtifacts({ latestYml, files });
+      process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
+      return reportExitCode(report);
+    }
+
+    if (command === 'report') {
+      const input = JSON.parse(await readFile(resolve(target), 'utf8')) as UnifiedReportInput;
+      const requestedDir = rest.find((value) => !value.startsWith('--'));
+      const outputDir = resolve(requestedDir ?? `.artisys/reports/${input.productId}`);
+      const bundle = await writeReportBundle(input, outputDir);
+      process.stdout.write(renderTerminal(input));
+      process.stdout.write(`${JSON.stringify(bundle, null, 2)}\n`);
+      return reportExitCode(input);
     }
 
     process.stderr.write(USAGE);
