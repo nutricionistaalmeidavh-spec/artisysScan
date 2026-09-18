@@ -1,0 +1,30 @@
+rules:
+  - id: artisys.javascript.dynamic-code-execution
+    message: Dynamic code execution with eval/Function can turn untrusted input into code.
+    severity: ERROR
+    languages: [javascript, typescript]
+    pattern-either:
+      - pattern: eval(...)
+      - pattern: new Function(...)
+
+  - id: artisys.python.dynamic-code-execution
+    message: Dynamic code execution with eval/exec should be removed or strictly isolated.
+    severity: ERROR
+    languages: [python]
+    pattern-either:
+      - pattern: eval(...)
+      - pattern: exec(...)
+
+  - id: artisys.php.dynamic-code-execution
+    message: PHP eval executes dynamic source code and is unsafe with untrusted input.
+    severity: ERROR
+    languages: [php]
+    pattern: eval(...)
+
+  - id: artisys.javascript.disabled-tls-verification
+    message: TLS certificate verification must not be disabled in production code.
+    severity: ERROR
+    languages: [javascript, typescript]
+    pattern-either:
+      - pattern: process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0"
+      - pattern: process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0'
