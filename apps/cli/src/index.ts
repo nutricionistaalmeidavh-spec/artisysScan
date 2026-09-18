@@ -10,9 +10,10 @@ import { runRbacScan } from '../../../packages/rbac/src/index.js';
 import { runSourceSecurity } from '../../../packages/security/src/index.js';
 import { runSupplyChain } from '../../../packages/supply-chain/src/index.js';
 import { runTenantScan } from '../../../packages/tenant/src/index.js';
+import { runWebDast } from '../../../packages/web/src/dast.js';
 import { runWebScan } from '../../../packages/web/src/index.js';
 
-const USAGE = `Usage:\n  artisys-scan validate <manifest>\n  artisys-scan discover <root>\n  artisys-scan security <root>\n  artisys-scan supply-chain <root> [output-dir]\n  artisys-scan qa <root> [output-dir] --allow-project-exec\n  artisys-scan web <url> [--allow-active]\n  artisys-scan api <access.yml> [--allow-state-change]\n  artisys-scan rbac <access.yml> [--allow-state-change]\n  artisys-scan tenant <access.yml> [--allow-state-change]\n  artisys-scan admin <access.yml> [--allow-state-change]\n`;
+const USAGE = `Usage:\n  artisys-scan validate <manifest>\n  artisys-scan discover <root>\n  artisys-scan security <root>\n  artisys-scan supply-chain <root> [output-dir]\n  artisys-scan qa <root> [output-dir] --allow-project-exec\n  artisys-scan web <url> [output-dir] [--dast] [--allow-active]\n  artisys-scan api <access.yml> [--allow-state-change]\n  artisys-scan rbac <access.yml> [--allow-state-change]\n  artisys-scan tenant <access.yml> [--allow-state-change]\n  artisys-scan admin <access.yml> [--allow-state-change]\n`;
 
 function reportExitCode(report: { complete: boolean; passed: boolean }): number {
   if (!report.complete) return 2;
@@ -69,7 +70,22 @@ export async function main(args: string[] = process.argv.slice(2)): Promise<numb
     }
 
     if (command === 'web') {
-      const report = await runWebScan(target, { allowActive: rest.includes('--allow-active') });
+      const allowActive = rest.includes('--allow-active');
+      const native = await runWebScan(target, { allowActive });
+      if (!rest.includes('--dast')) {
+        process.stdout.write(`${JSON.stringify(native, null, 2)}\n`);
+        return reportExitCode(native);
+      }
+      const requestedOutput = rest.find((value) => !value.startsWith('--'));
+      const outputDir = resolve(requestedOutput ?? '.artisys/reports/web-dast');
+      const dast = await runWebDast(target, outputDir, { allowActive });
+      const report = {
+        target,
+        complete: native.complete && dast.complete,
+        passed: native.passed && dast.passed,
+        native,
+        dast,
+      };
       process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
       return reportExitCode(report);
     }
