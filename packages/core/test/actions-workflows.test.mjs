@@ -4,10 +4,11 @@ import test from 'node:test';
 
 const read = (path) => readFile(path, 'utf8');
 
-test('quick workflow exists for PR and push validation without publishing releases', async () => {
+test('quick workflow remains isolated PR/manual fallback without publishing releases', async () => {
   const yaml = await read('.github/workflows/scan-quick.yml');
   assert.match(yaml, /pull_request:/);
-  assert.match(yaml, /push:/);
+  assert.match(yaml, /workflow_dispatch:/);
+  assert.doesNotMatch(yaml, /^\s*push:\s*$/m);
   assert.match(yaml, /npm run ci/);
   assert.doesNotMatch(yaml, /gh release|action-gh-release|npm publish/i);
 });
