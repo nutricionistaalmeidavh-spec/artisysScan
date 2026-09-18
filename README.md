@@ -1,10 +1,10 @@
 # ArtiSys Scan
 
-Orquestrador open source e self-hosted para QA, segurança, descoberta de stack, autorização e futuros release gates dos sistemas ArtiSys.
+Orquestrador open source e self-hosted para QA, segurança, descoberta de stack, autorização, desktop e validação de releases dos sistemas ArtiSys.
 
 ## Estado atual
 
-As Fases 0–10 estão implementadas:
+As Fases 0–15 estão implementadas:
 
 - fundação do monorepo e CLI;
 - contrato universal `.artisys/scan.yml` e discovery automático;
@@ -17,7 +17,11 @@ As Fases 0–10 estão implementadas:
 - RBAC Scanner por matriz de atores/papéis × ações;
 - Multitenant Scanner para isolamento entre tenants A/B;
 - Admin/Superadmin Scanner para fronteiras privilegiadas e auditoria;
-- CI de desenvolvimento no GitHub Actions, sem release automático;
+- Desktop/Electron Scanner para hardening, preload/IPC, navegação, tokens/logs e SQLite;
+- Installer Scanner com geração do instalador antes de instalação, execução, QA e security;
+- Update Scanner para `latest.yml`, integridade, blockmap, restart, persistência e rollback;
+- Reporter com terminal, HTML, JSON, SARIF, JUnit, evidências e SBOM;
+- GitHub Actions nos perfis quick/full/manual, sem publicação automática de release;
 - Woodpecker reservado para a fase operacional final, ainda sem ativação automática.
 
 ## Princípios
@@ -29,6 +33,7 @@ As Fases 0–10 estão implementadas:
 - valores brutos de segredos encontrados não entram no relatório normalizado;
 - credenciais de teste não ficam no Git: arquivos de acesso usam apenas nomes `tokenEnv`;
 - operações que alteram estado são bloqueadas por padrão;
+- workflows que executam código do produto exigem autorização explícita;
 - GitHub Actions é CI de desenvolvimento; Woodpecker será o CI operacional definitivo.
 
 ## Desenvolvimento
@@ -55,6 +60,10 @@ npm run scan -- api /caminho/access.yml [--allow-state-change]
 npm run scan -- rbac /caminho/access.yml [--allow-state-change]
 npm run scan -- tenant /caminho/access.yml [--allow-state-change]
 npm run scan -- admin /caminho/access.yml [--allow-state-change]
+npm run scan -- desktop /caminho/do/projeto
+npm run scan -- installer /caminho/installer-workflow.json --allow-project-exec
+npm run scan -- update-artifacts /caminho/latest.yml [/pasta/dos/artefatos]
+npm run scan -- report /caminho/report-input.json [/pasta/de/saida]
 ```
 
 ## Web / DAST
@@ -89,12 +98,72 @@ $env:ARTISYS_TOKEN_SUPERADMIN="..."
 
 Nunca coloque esses valores no `access.yml`.
 
+## Desktop / Electron
+
+`desktop` é estático: ele percorre arquivos do projeto sem iniciar o aplicativo. Entre as verificações atuais:
+
+- `nodeIntegration`, `contextIsolation`, sandbox e `webviewTag`;
+- preload expondo `ipcRenderer` diretamente;
+- handlers IPC sem validação observável do sender;
+- `shell.openExternal` para revisão de allowlist;
+- navegação remota por HTTP;
+- persistência aparente de tokens em localStorage/logs;
+- bancos SQLite/DB rastreados no projeto que podem conter dados reais.
+
+## Installer Scanner
+
+O fluxo é declarativo. Use `examples/installer-workflow.json` como base. A ordem é fixa:
+
+```text
+build → installer → install → launch → QA → security
+```
+
+O instalador é produzido antes do QA. Assim, uma falha posterior de QA/security não apaga a evidência de que o `.exe`/instalador foi gerado. Falhas em build/installer/install/launch bloqueiam etapas dependentes. Os comandos são executados com `shell: false` e somente após `--allow-project-exec`.
+
+## Update Scanner
+
+`update-artifacts` verifica os artefatos de release sem executar o produto:
+
+- versão e path do `latest.yml`;
+- `sha512`;
+- instalador referenciado;
+- `<installer>.blockmap`.
+
+O package de updater também expõe um cenário adaptável para ambientes de teste que verifica versão anterior → nova versão, restart, preservação de um sentinel de dados e rollback. Esse cenário não é disparado automaticamente contra produção.
+
+## Reporter
+
+`report` recebe um JSON normalizado e cria:
+
+- `summary.json`;
+- `report.html`;
+- `findings.sarif`;
+- `junit.xml`;
+- `evidence.json`;
+- `sbom.cdx.json`, quando um SBOM é informado.
+
+O terminal também exibe status geral, contagem por severidade e findings principais.
+
+## GitHub Actions
+
+Durante o desenvolvimento:
+
+- `scan-quick.yml`: automático em push/PR e executa typecheck + testes + build;
+- `scan-full.yml`: manual/reutilizável para core + Source Security + Supply Chain;
+- `scan-manual.yml`: permite escolher `quick`, `full` ou `release`;
+- `ci.yml`: mantido apenas como fallback manual legado.
+
+O perfil `release` atual é somente de verificação. **Nenhum workflow publica release automaticamente.** O gate PASS/WARN/BLOCK entra na Fase 16; Woodpecker continua preparado para a fase operacional final.
+
 ### Segurança de execução
 
 - `web` faz baseline e CORS com `GET` por padrão; a probe de reflexão só entra com `--allow-active`.
 - `web --dast` usa ZAP Baseline; Nuclei só roda com `--allow-active`.
 - `api`, `rbac`, `tenant` e `admin` pulam `POST`, `PUT`, `PATCH` e `DELETE` sem `--allow-state-change` e devolvem `complete: false`.
 - `qa` exige `--allow-project-exec` porque testes E2E executam código do alvo.
+- `desktop` é estático e não inicia o alvo.
+- `installer` exige `--allow-project-exec`; não executa comandos via shell.
+- `update-artifacts` é estático; update/restart/rollback real depende de adapter explícito de ambiente de teste.
 - Execute testes ativos e mutações somente em sistemas/ambientes que você controla e preparou para teste.
 
 ## Ferramentas externas do core
