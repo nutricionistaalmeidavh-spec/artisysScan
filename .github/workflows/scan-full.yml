@@ -1,0 +1,33 @@
+name: scan-full
+
+on:
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  full:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package.json
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Verify scanner core
+        run: npm run ci
+      - name: Source security profile
+        continue-on-error: true
+        run: npm run scan -- security .
+      - name: Supply-chain profile
+        continue-on-error: true
+        run: npm run scan -- supply-chain . artifacts/supply-chain
+
+# Full development scan only. External-tool availability is surfaced by the CLI.
+# There is intentionally no automatic release publication in this workflow.
