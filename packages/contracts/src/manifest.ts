@@ -7,7 +7,7 @@ import schema from '../schema/artisys-scan.schema.json' with { type: 'json' };
 import type { ScanManifestV1 } from './types.js';
 
 const ajv = new Ajv({ allErrors: true, strict: true });
-const validateSchema = ajv.compile(schema);
+const validateSchema = ajv.compile<ScanManifestV1>(schema);
 
 function formatAjvError(error: ErrorObject): string {
   const location = error.instancePath || '/';
@@ -38,7 +38,7 @@ export function validateManifest(value: unknown): ScanManifestV1 {
     );
   }
 
-  return value as ScanManifestV1;
+  return value;
 }
 
 export async function loadManifest(path: string): Promise<ScanManifestV1> {
