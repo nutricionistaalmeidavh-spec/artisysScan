@@ -15,7 +15,7 @@
 - [x] **3 — Source Security:** Semgrep CE com regras locais, Trivy, Gitleaks e OSV-Scanner, runner sem shell e findings normalizados sem expor segredos brutos.
 - [x] **4 — SBOM / Supply Chain:** CycloneDX preservado como artefato, dependências, licenças e vulnerabilidades via Trivy + OSV-Scanner.
 - [x] **5 — QA Engine:** descoberta de Playwright/scripts QA existentes, screenshots, vídeos, traces, JSON/HTML, console e network via trace, com execução do projeto-alvo somente após autorização explícita.
-- [x] **6 — Web Scanner:** HTTPS, headers, CSP, HSTS, cookies, banners/leakage, CORS com origem não confiável, heurística de CSRF, superfície de upload e reflexão ativa opt-in.
+- [x] **6 — Web Scanner:** HTTPS, headers, CSP, HSTS, cookies, banners/leakage, CORS com origem não confiável, heurística de CSRF, superfície de upload, reflexão ativa opt-in e perfil DAST opcional com OWASP ZAP Baseline + Nuclei.
 - [x] **7 — API Scanner:** autenticação anônima/token inválido, entrada inválida, rate limit, BOLA/IDOR configurável e mass assignment, com mutações bloqueadas por padrão.
 - [x] **8 — RBAC Scanner:** matriz atores/papéis × ações com teste HTTP direto, detecção de acesso negado aceito e divergência entre política e implementação.
 - [x] **9 — Multitenant Scanner:** pares A→B/B→A, substituição de `tenantId`/`resourceId`, isolamento read/create/update/delete e findings críticos para qualquer acesso cross-tenant bem-sucedido.
@@ -40,6 +40,7 @@ O discovery pode inferir tecnologias objetivamente observáveis, mas **não deve
 - Scans estáticos não executam código do sistema analisado.
 - QA E2E exige `--allow-project-exec` porque Playwright/scripts QA executam o projeto-alvo.
 - Web Scanner executa baseline e probe CORS por `GET`; a reflexão ativa só roda com `--allow-active`.
+- O perfil `web --dast` executa ZAP Baseline em Docker; Nuclei só é incluído quando `--allow-active` também é fornecido.
 - API, RBAC, Multitenant e Admin/Superadmin não executam `POST`, `PUT`, `PATCH` ou `DELETE` sem `--allow-state-change`.
 - Tokens e credenciais não ficam no YAML. O contrato guarda somente nomes `tokenEnv`; os valores vêm de secrets do CI ou variáveis de ambiente locais.
 - Se uma etapa necessária é pulada ou uma credencial/ferramenta está ausente, o relatório fica `complete: false` em vez de declarar sucesso silenciosamente.
