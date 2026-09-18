@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { createAdminCases, evaluateAdminCase, evaluateAuditCheck } from '../src/index.ts';
+import { createAdminCases, evaluateAdminCase, evaluateAuditCheck, runAdminScan } from '../src/index.ts';
 
 const policy = {
   schema: 1,
@@ -15,6 +15,7 @@ const policy = {
     {
       id: 'licenses.write', method: 'PATCH', path: '/api/superadmin/licenses',
       allowRoles: ['superadmin'], privileged: true,
+      body: { status: 'active' },
       auditCheck: { method: 'GET', path: '/api/superadmin/audit?limit=20' },
     },
   ],
@@ -38,7 +39,21 @@ test('ordinary admin reaching superadmin action is critical', () => {
 });
 
 test('missing audit evidence after privileged action is reported', () => {
-  const finding = evaluateAuditCheck('licenses.write', { status: 200, headers: {}, body: '[]' }, 'admin');
+  const finding = evaluateAuditCheck('licenses.write', { status: 200, headers: {}, body: '[]' }, 'superadmin');
   assert.equal(finding?.ruleId, 'ARTISYS-SA-007');
   assert.equal(finding?.severity, 'high');
+});
+
+test('runAdminScan verifies configured audit trail when state-changing checks are authorized', async () => {
+  const report = await runAdminScan(policy, {
+    allowStateChange: true,
+    env: { TOKEN_ADMIN: 'a', TOKEN_OWNER: 'o', TOKEN_SUPERADMIN: 's' },
+    transport: async (request) => {
+      if (request.kind === 'admin-boundary') return { status: 403, headers: {}, body: '{}' };
+      if (request.kind === 'admin-audit-action') return { status: 200, headers: {}, body: '{}' };
+      return { status: 200, headers: {}, body: '[]' };
+    },
+  });
+  assert.equal(report.complete, true);
+  assert.ok(report.findings.some((finding) => finding.ruleId === 'ARTISYS-SA-007'));
 });

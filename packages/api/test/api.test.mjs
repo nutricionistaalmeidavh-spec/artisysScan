@@ -13,17 +13,19 @@ const policy = {
   api: {
     endpoints: [
       {
-        id: 'profile', method: 'GET', path: '/api/profile', auth: 'required',
+        id: 'profile', method: 'GET', path: '/api/profile', auth: 'required', actorId: 'user',
         invalidBody: { email: 42 }, rateLimitProbe: 3,
+        bolaPath: '/api/users/other-user',
+        massAssignmentBody: { role: 'superadmin' },
       },
     ],
   },
 };
 
-test('API scanner creates anonymous, invalid-token, invalid-input and rate-limit cases', () => {
+test('API scanner creates auth, input, rate-limit, BOLA and mass-assignment cases', () => {
   const cases = createApiCases(policy);
   assert.deepEqual(new Set(cases.map((item) => item.kind)), new Set([
-    'anonymous', 'invalid-token', 'invalid-input', 'rate-limit',
+    'anonymous', 'invalid-token', 'invalid-input', 'rate-limit', 'bola', 'mass-assignment',
   ]));
 });
 
@@ -37,10 +39,35 @@ test('protected API accepting anonymous access is a critical finding', () => {
   assert.equal(finding?.severity, 'critical');
 });
 
-test('runApiScan is transport-driven and reports incomplete only on transport errors', async () => {
+test('BOLA success and mass assignment success are security findings', () => {
+  const bola = evaluateApiCase({
+    id: 'profile:bola', endpointId: 'profile', kind: 'bola', method: 'GET',
+    url: 'https://api.example.test/api/users/other-user', expected: 'deny', stateChanging: false,
+    actorId: 'user',
+  }, { status: 200, headers: {}, body: '{}' });
+  assert.equal(bola?.ruleId, 'ARTISYS-API-BOLA-001');
+  assert.equal(bola?.severity, 'critical');
+
+  const mass = evaluateApiCase({
+    id: 'profile:mass', endpointId: 'profile', kind: 'mass-assignment', method: 'PATCH',
+    url: 'https://api.example.test/api/profile', expected: 'reject-input', stateChanging: true,
+    actorId: 'user', body: { role: 'superadmin' },
+  }, { status: 200, headers: {}, body: '{}' });
+  assert.equal(mass?.ruleId, 'ARTISYS-API-MASS-001');
+  assert.equal(mass?.severity, 'high');
+});
+
+test('runApiScan is transport-driven and reports auth findings', async () => {
   const report = await runApiScan(policy, {
+    allowStateChange: true,
+    env: { TOKEN_USER: 'demo-token' },
     transport: async (request) => ({
-      status: request.headers?.authorization === 'Bearer ARTISYS_INVALID_TOKEN' ? 401 : 200,
+      status: request.kind === 'anonymous' ? 200
+        : request.kind === 'invalid-token' ? 401
+          : request.kind === 'bola' ? 403
+            : request.kind === 'mass-assignment' ? 400
+              : request.kind === 'invalid-input' ? 400
+                : 429,
       headers: request.kind === 'rate-limit' ? { 'retry-after': '60' } : {},
       body: '{}',
     }),
