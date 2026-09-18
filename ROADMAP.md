@@ -12,9 +12,9 @@
 - [x] **0 — Fundação:** monorepo Node 22/TypeScript, CLI, packages, documentação e CI de desenvolvimento.
 - [x] **1 — Contrato universal:** `.artisys/scan.yml`, JSON Schema, tipos e validação.
 - [x] **2 — Discovery automático:** detectar stack, runtime, banco, QA, installer e produzir manifesto sugerido seguro.
-- [ ] **3 — Source Security:** Semgrep CE, Trivy, Gitleaks e OSV-Scanner.
-- [ ] **4 — SBOM / Supply Chain:** CycloneDX, dependências, licenças e vulnerabilidades.
-- [ ] **5 — QA Engine:** integração com Playwright/artisys-qa, screenshots, vídeos, traces, console e network.
+- [x] **3 — Source Security:** Semgrep CE com regras locais, Trivy, Gitleaks e OSV-Scanner, runner sem shell e findings normalizados sem expor segredos brutos.
+- [x] **4 — SBOM / Supply Chain:** CycloneDX preservado como artefato, dependências, licenças e vulnerabilidades via Trivy + OSV-Scanner.
+- [x] **5 — QA Engine:** descoberta de Playwright/scripts QA existentes, screenshots, vídeos, traces, JSON/HTML, console e network via trace, com execução do projeto-alvo somente após autorização explícita.
 - [ ] **6 — Web Scanner:** headers, CSP, CORS, cookies, HTTPS, sessão, CSRF, XSS, uploads, debug e leakage.
 - [ ] **7 — API Scanner:** autenticação, IDOR/BOLA, mass assignment, tenant/company IDs, rate limit e entrada.
 - [ ] **8 — RBAC Scanner:** matriz de papéis × ações com teste direto de API.
@@ -34,3 +34,7 @@
 ## Regra de segurança do discovery
 
 O discovery pode inferir tecnologias objetivamente observáveis, mas **não deve assumir** autenticação, RBAC, multitenancy ou superadmin. Essas capacidades são marcadas como `review` até declaração explícita no manifesto. Isso evita que um scan crítico seja pulado silenciosamente.
+
+## Regra de execução
+
+Scans estáticos não executam código do sistema analisado. O QA E2E é a exceção necessária: como Playwright/scripts QA executam o projeto-alvo, o CLI exige autorização explícita com `--allow-project-exec`. O ArtiSys Scan não instala Playwright nem dependências do alvo silenciosamente.
