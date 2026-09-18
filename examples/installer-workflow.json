@@ -1,0 +1,28 @@
+{
+  "root": "C:/workspace/product",
+  "installerType": "nsis",
+  "buildCommand": {
+    "command": "npm",
+    "args": ["run", "build"]
+  },
+  "packageCommand": {
+    "command": "npm",
+    "args": ["run", "dist"]
+  },
+  "installCommand": {
+    "command": "C:/workspace/product/dist/Product Setup.exe",
+    "args": ["/S"]
+  },
+  "launchCommand": {
+    "command": "C:/Program Files/Product/Product.exe",
+    "args": []
+  },
+  "qaCommand": {
+    "command": "npm",
+    "args": ["run", "qa:e2e"]
+  },
+  "securityCommand": {
+    "command": "npm",
+    "args": ["run", "scan:security"]
+  }
+}
