@@ -1,16 +1,19 @@
-import { readFile, readdir } from 'node:fs/promises';
-import { dirname, resolve } from 'node:path';
+import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
+import { dirname, isAbsolute, join, resolve } from 'node:path';
 
 import { runAdminScan } from '../../../packages/admin/src/index.js';
 import { loadAccessPolicy } from '../../../packages/access-control/src/index.js';
 import { runApiScan } from '../../../packages/api/src/index.js';
 import { loadManifest } from '../../../packages/contracts/src/index.js';
 import { discoverProject } from '../../../packages/core/src/index.js';
+import { writeFleetDashboard, type FleetReport } from '../../../packages/dashboard/src/index.js';
 import { runDesktopScan } from '../../../packages/desktop/src/index.js';
+import { loadFleetConfig, runFleet, type FleetProduct } from '../../../packages/fleet/src/index.js';
 import { runInstallerWorkflow, type InstallerWorkflowConfig } from '../../../packages/installer/src/index.js';
 import { runQa } from '../../../packages/qa/src/index.js';
 import { runRbacScan } from '../../../packages/rbac/src/index.js';
-import { renderTerminal, writeReportBundle, type UnifiedReportInput } from '../../../packages/reporter/src/index.js';
+import { evaluateReleaseGate, releaseGateExitCode, type ReleaseGatePolicy } from '../../../packages/release-gate/src/index.js';
+import { renderTerminal, writeReportBundle, type ReportCheck, type ReportFinding, type UnifiedReportInput } from '../../../packages/reporter/src/index.js';
 import { runSourceSecurity } from '../../../packages/security/src/index.js';
 import { runSupplyChain } from '../../../packages/supply-chain/src/index.js';
 import { runTenantScan } from '../../../packages/tenant/src/index.js';
@@ -18,11 +21,77 @@ import { inspectUpdaterArtifacts } from '../../../packages/updater/src/index.js'
 import { runWebDast } from '../../../packages/web/src/dast.js';
 import { runWebScan } from '../../../packages/web/src/index.js';
 
-const USAGE = `Usage:\n  artisys-scan validate <manifest>\n  artisys-scan discover <root>\n  artisys-scan security <root>\n  artisys-scan supply-chain <root> [output-dir]\n  artisys-scan qa <root> [output-dir] --allow-project-exec\n  artisys-scan web <url> [output-dir] [--dast] [--allow-active]\n  artisys-scan api <access.yml> [--allow-state-change]\n  artisys-scan rbac <access.yml> [--allow-state-change]\n  artisys-scan tenant <access.yml> [--allow-state-change]\n  artisys-scan admin <access.yml> [--allow-state-change]\n  artisys-scan desktop <root>\n  artisys-scan installer <workflow.json> --allow-project-exec\n  artisys-scan update-artifacts <latest.yml> [artifact-dir]\n  artisys-scan report <input.json> [output-dir]\n`;
+const USAGE = `Usage:\n  artisys-scan validate <manifest>\n  artisys-scan discover <root>\n  artisys-scan security <root>\n  artisys-scan supply-chain <root> [output-dir]\n  artisys-scan qa <root> [output-dir] --allow-project-exec\n  artisys-scan web <url> [output-dir] [--dast] [--allow-active]\n  artisys-scan api <access.yml> [--allow-state-change]\n  artisys-scan rbac <access.yml> [--allow-state-change]\n  artisys-scan tenant <access.yml> [--allow-state-change]\n  artisys-scan admin <access.yml> [--allow-state-change]\n  artisys-scan desktop <root>\n  artisys-scan installer <workflow.json> --allow-project-exec\n  artisys-scan update-artifacts <latest.yml> [artifact-dir]\n  artisys-scan report <input.json> [output-dir]\n  artisys-scan gate <report.json> [policy.json]\n  artisys-scan fleet <fleet.yml> [output.json] [--concurrency=N]\n  artisys-scan dashboard <fleet-report.json> [output-dir]\n`;
 
 function reportExitCode(report: { complete: boolean; passed: boolean }): number {
   if (!report.complete) return 2;
   return report.passed ? 0 : 3;
+}
+
+function checkStatus(complete: boolean, findings: ReportFinding[]): ReportCheck['status'] {
+  if (!complete) return 'incomplete';
+  if (findings.some((item) => item.severity === 'critical' || item.severity === 'high')) return 'failed';
+  if (findings.length > 0) return 'warn';
+  return 'passed';
+}
+
+async function scanFleetProduct(product: FleetProduct, configDir: string): Promise<UnifiedReportInput> {
+  const root = isAbsolute(product.root) ? product.root : resolve(configDir, product.root);
+  const discovery = await discoverProject(root);
+  const findings: ReportFinding[] = [];
+  const checks: ReportCheck[] = [{ id: 'discovery', name: 'Project discovery', status: 'passed' }];
+  const evidence = discovery.evidence.map((item) => `${item.signal}:${item.path}`);
+  let complete = true;
+
+  if (discovery.runtime.desktop) {
+    const desktop = await runDesktopScan(root);
+    findings.push(...desktop.findings);
+    checks.push({ id: 'desktop', name: 'Desktop/Electron static scan', status: checkStatus(desktop.complete, desktop.findings) });
+    complete = complete && desktop.complete;
+  }
+
+  if (product.profile === 'full' || product.profile === 'release') {
+    const security = await runSourceSecurity(root);
+    findings.push(...security.findings);
+    checks.push({ id: 'source-security', name: 'Source security', status: checkStatus(security.complete, security.findings) });
+    complete = complete && security.complete;
+
+    const supplyOutput = join(root, '.artisys', 'reports', 'fleet', product.id, 'supply-chain');
+    const supply = await runSupplyChain(root, { outputDir: supplyOutput });
+    const supplyFindings: ReportFinding[] = [
+      ...supply.vulnerabilities.map((item) => ({
+        ruleId: item.id,
+        severity: item.severity,
+        message: item.message,
+        tool: 'supply-chain',
+        ...(item.path ? { path: item.path } : {}),
+      })),
+      ...supply.licenses.map((item) => ({
+        ruleId: `LICENSE:${item.license}`,
+        severity: item.severity,
+        message: `${item.classification}: ${item.license}`,
+        tool: 'supply-chain',
+        ...(item.path ? { path: item.path } : {}),
+      })),
+      ...supply.osvFindings,
+    ];
+    findings.push(...supplyFindings);
+    evidence.push(...supply.artifacts);
+    checks.push({ id: 'supply-chain', name: 'Supply chain', status: checkStatus(supply.complete, supplyFindings) });
+    complete = complete && supply.complete;
+  }
+
+  const blockingFinding = findings.some((item) => item.severity === 'critical' || item.severity === 'high');
+  const failedCheck = checks.some((item) => item.status === 'failed' || item.status === 'incomplete');
+  return {
+    productId: product.id,
+    profile: product.profile,
+    passed: complete && !blockingFinding && !failedCheck,
+    complete,
+    findings,
+    checks,
+    evidence,
+  };
 }
 
 export async function main(args: string[] = process.argv.slice(2)): Promise<number> {
@@ -141,6 +210,48 @@ export async function main(args: string[] = process.argv.slice(2)): Promise<numb
       process.stdout.write(renderTerminal(input));
       process.stdout.write(`${JSON.stringify(bundle, null, 2)}\n`);
       return reportExitCode(input);
+    }
+
+    if (command === 'gate') {
+      const input = JSON.parse(await readFile(resolve(target), 'utf8')) as UnifiedReportInput;
+      const policyPath = rest.find((value) => !value.startsWith('--'));
+      const policy = policyPath
+        ? JSON.parse(await readFile(resolve(policyPath), 'utf8')) as ReleaseGatePolicy
+        : undefined;
+      const result = evaluateReleaseGate(input, policy);
+      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+      return releaseGateExitCode(result);
+    }
+
+    if (command === 'fleet') {
+      const configPath = resolve(target);
+      const configDir = dirname(configPath);
+      const config = await loadFleetConfig(configPath);
+      const concurrencyArg = rest.find((value) => value.startsWith('--concurrency='));
+      const parsedConcurrency = concurrencyArg ? Number(concurrencyArg.split('=')[1]) : undefined;
+      const concurrency = Number.isInteger(parsedConcurrency) && (parsedConcurrency ?? 0) > 0 ? parsedConcurrency : undefined;
+      const report = await runFleet(
+        config,
+        (product) => scanFleetProduct(product, configDir),
+        concurrency === undefined ? {} : { concurrency },
+      );
+      const requestedOutput = rest.find((value) => !value.startsWith('--'));
+      if (requestedOutput) {
+        const outputPath = resolve(requestedOutput);
+        await mkdir(dirname(outputPath), { recursive: true });
+        await writeFile(outputPath, `${JSON.stringify(report, null, 2)}\n`);
+      }
+      process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
+      return report.decision === 'PASS' ? 0 : report.decision === 'WARN' ? 4 : 3;
+    }
+
+    if (command === 'dashboard') {
+      const report = JSON.parse(await readFile(resolve(target), 'utf8')) as FleetReport;
+      const requestedDir = rest.find((value) => !value.startsWith('--'));
+      const outputDir = resolve(requestedDir ?? '.artisys/dashboard');
+      const bundle = await writeFleetDashboard(report, outputDir);
+      process.stdout.write(`${JSON.stringify(bundle, null, 2)}\n`);
+      return 0;
     }
 
     process.stderr.write(USAGE);
