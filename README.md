@@ -1,29 +1,33 @@
 # ArtiSys Scan
 
-Orquestrador open source e self-hosted para QA, segurança, descoberta de stack e futuros release gates dos sistemas ArtiSys.
+Orquestrador open source e self-hosted para QA, segurança, descoberta de stack, autorização e futuros release gates dos sistemas ArtiSys.
 
 ## Estado atual
 
-As Fases 0–5 estão implementadas:
+As Fases 0–10 estão implementadas:
 
 - fundação do monorepo e CLI;
-- contrato universal `.artisys/scan.yml`;
-- discovery automático de stack e capacidades técnicas;
+- contrato universal `.artisys/scan.yml` e discovery automático;
 - Source Security com Semgrep CE, Trivy, Gitleaks e OSV-Scanner;
 - SBOM CycloneDX, vulnerabilidades e licenças;
-- QA Engine para Playwright e scripts QA existentes, com screenshots, vídeos, traces e relatórios JSON/HTML;
+- QA Engine para Playwright/scripts QA existentes, com screenshots, vídeos, traces e relatórios;
+- Web Scanner para HTTPS/headers/CSP/cookies/CORS/leakage, superfícies de CSRF/upload e reflexão opt-in;
+- API Scanner para autenticação, entrada inválida, rate limit, BOLA/IDOR e mass assignment;
+- RBAC Scanner por matriz de atores/papéis × ações;
+- Multitenant Scanner para isolamento entre tenants A/B;
+- Admin/Superadmin Scanner para fronteiras privilegiadas e auditoria;
 - CI de desenvolvimento no GitHub Actions, sem release automático;
-- Woodpecker previsto para a fase operacional final, ainda sem ativação automática.
+- Woodpecker reservado para a fase operacional final, ainda sem ativação automática.
 
 ## Princípios
 
 - núcleo R$ 0, open source e self-hosted;
 - CI independente do provedor: a lógica vive no CLI, não no YAML do CI;
 - nenhum scanner crítico é silenciosamente pulado;
-- capacidades de negócio que não podem ser inferidas estaticamente ficam como `review`;
-- scanners estáticos usam subprocessos sem shell;
+- capacidades de negócio não inferíveis estaticamente permanecem `review` até declaração explícita;
 - valores brutos de segredos encontrados não entram no relatório normalizado;
-- QA não instala dependências do sistema-alvo e só executa código após autorização explícita;
+- credenciais de teste não ficam no Git: arquivos de acesso usam apenas nomes `tokenEnv`;
+- operações que alteram estado são bloqueadas por padrão;
 - GitHub Actions é CI de desenvolvimento; Woodpecker será o CI operacional definitivo.
 
 ## Desenvolvimento
@@ -43,42 +47,51 @@ npm run scan -- discover /caminho/do/projeto
 npm run scan -- security /caminho/do/projeto
 npm run scan -- supply-chain /caminho/do/projeto [/pasta/de/relatorios]
 npm run scan -- qa /caminho/do/projeto [/pasta/de/relatorios] --allow-project-exec
+npm run scan -- web https://app.exemplo.com [--allow-active]
+npm run scan -- api /caminho/access.yml [--allow-state-change]
+npm run scan -- rbac /caminho/access.yml [--allow-state-change]
+npm run scan -- tenant /caminho/access.yml [--allow-state-change]
+npm run scan -- admin /caminho/access.yml [--allow-state-change]
 ```
 
-### Ferramentas da Fase 3
+## Contrato de acesso — Fases 7–10
 
-Para um scan completo de Source Security, o ambiente deve ter no `PATH`:
+Use `examples/access.yml` como referência. O arquivo descreve:
+
+- `baseUrl` do ambiente autorizado de teste;
+- atores e papéis;
+- `tokenEnv` em vez do token real;
+- ações e `allowRoles` para RBAC;
+- endpoints de API e probes opcionais de BOLA/mass assignment;
+- recursos de tenants usados para cruzar A→B e B→A;
+- ações `privileged` e endpoint de auditoria para superadmin.
+
+Antes de executar scanners autenticados, defina os tokens no ambiente/CI, por exemplo:
+
+```powershell
+$env:ARTISYS_TOKEN_USER_A="..."
+$env:ARTISYS_TOKEN_ADMIN="..."
+$env:ARTISYS_TOKEN_SUPERADMIN="..."
+```
+
+Nunca coloque esses valores no `access.yml`.
+
+### Segurança de execução
+
+- `web` faz baseline e CORS com `GET` por padrão; a probe de reflexão só entra com `--allow-active`.
+- `api`, `rbac`, `tenant` e `admin` pulam `POST`, `PUT`, `PATCH` e `DELETE` sem `--allow-state-change` e devolvem `complete: false`.
+- `qa` exige `--allow-project-exec` porque testes E2E executam código do alvo.
+- Execute testes ativos e mutações somente em sistemas/ambientes que você controla e preparou para teste.
+
+## Ferramentas externas do core
+
+Para Source Security/Supply Chain completos, o ambiente deve ter no `PATH`:
 
 - Semgrep Community Edition;
 - Trivy;
 - Gitleaks;
 - OSV-Scanner.
 
-Todas são ferramentas open source executadas localmente. Se alguma estiver ausente, o relatório recebe `complete: false` em vez de declarar sucesso silenciosamente.
+Todas são executadas localmente. Se uma ferramenta obrigatória estiver ausente, o relatório fica incompleto em vez de receber um falso PASS.
 
-### Fase 4 — Supply Chain
-
-O comando `supply-chain` gera/preserva:
-
-- `sbom.cdx.json` — SBOM CycloneDX;
-- `trivy-supply-chain.json` — vulnerabilidades e licenças;
-- `osv-supply-chain.json` — segunda fonte para vulnerabilidades de dependências.
-
-Trivy e OSV-Scanner devem estar instalados localmente.
-
-### Fase 5 — QA
-
-O QA Engine procura primeiro a instalação/configuração Playwright já existente no projeto. Também reconhece scripts como `artisys:qa`, `qa:full`, `qa`, `test:e2e` e `e2e`.
-
-Quando Playwright existe, o ArtiSys Scan cria um overlay temporário em `.artisys/qa/` que preserva a configuração do projeto e força evidências de falha:
-
-- screenshot `only-on-failure`;
-- vídeo `retain-on-failure`;
-- trace `retain-on-failure`;
-- JSON report;
-- HTML report;
-- console e network preservados no trace.
-
-O comando exige `--allow-project-exec` porque testes E2E executam código do sistema analisado. O ArtiSys Scan não baixa Playwright nem instala dependências do projeto automaticamente.
-
-Veja `ROADMAP.md` para o plano completo.
+Veja `ROADMAP.md` para as próximas fases.
