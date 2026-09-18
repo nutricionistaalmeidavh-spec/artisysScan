@@ -1,0 +1,72 @@
+schema: 1
+baseUrl: https://app.example.com
+
+# tokenEnv references environment variables/secrets from CI or the local machine.
+# Never commit bearer tokens to this file.
+actors:
+  - id: user-a
+    role: user
+    tenant: tenant-a
+    tokenEnv: ARTISYS_TOKEN_USER_A
+  - id: user-b
+    role: user
+    tenant: tenant-b
+    tokenEnv: ARTISYS_TOKEN_USER_B
+  - id: admin
+    role: admin
+    tokenEnv: ARTISYS_TOKEN_ADMIN
+  - id: owner
+    role: owner
+    tokenEnv: ARTISYS_TOKEN_OWNER
+  - id: superadmin
+    role: superadmin
+    tokenEnv: ARTISYS_TOKEN_SUPERADMIN
+
+actions:
+  - id: users.read
+    method: GET
+    path: /api/users
+    allowRoles: [admin, owner, superadmin]
+  - id: licenses.write
+    method: PATCH
+    path: /api/superadmin/licenses
+    allowRoles: [superadmin]
+    privileged: true
+    body:
+      companyId: scan-test-company
+      status: active
+    auditCheck:
+      method: GET
+      path: /api/superadmin/audit?limit=20
+
+api:
+  endpoints:
+    - id: profile
+      method: GET
+      path: /api/profile
+      auth: required
+      rateLimitProbe: 5
+    - id: users.create
+      method: POST
+      path: /api/users
+      auth: required
+      invalidBody:
+        email: 42
+
+tenant:
+  resources:
+    tenant-a:
+      order: scan-order-a
+    tenant-b:
+      order: scan-order-b
+  routes:
+    - id: order.read
+      method: GET
+      path: /api/tenants/{tenantId}/orders/{resourceId}
+      resourceKey: order
+    - id: order.update
+      method: PATCH
+      path: /api/tenants/{tenantId}/orders/{resourceId}
+      resourceKey: order
+      body:
+        note: artisys-scan
