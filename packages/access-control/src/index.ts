@@ -227,7 +227,7 @@ export async function loadAccessPolicy(path: string): Promise<AccessPolicyV1> {
 
 export function substituteTemplate<T>(value: T, variables: Record<string, string>): T {
   if (typeof value === 'string') {
-    let result = value;
+    let result: string = value;
     for (const [key, replacement] of Object.entries(variables)) result = result.split(`{${key}}`).join(replacement);
     return result as T;
   }
