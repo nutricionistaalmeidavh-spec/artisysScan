@@ -51,6 +51,64 @@ test('discover prints a conservative discovery result as JSON', async () => {
   assert.equal(output.suggestedManifest.capabilities.rbac, 'review');
 });
 
+test('gate evaluates a normalized report and exits BLOCK for high findings', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'artisys-cli-gate-'));
+  const reportPath = join(root, 'report.json');
+  await writeFile(reportPath, JSON.stringify({
+    productId: 'produto',
+    profile: 'release',
+    passed: false,
+    complete: true,
+    findings: [{ ruleId: 'HIGH-1', severity: 'high', message: 'block', tool: 'test' }],
+    checks: [],
+    evidence: [],
+  }), 'utf8');
+
+  const result = runCli(['gate', reportPath]);
+  assert.equal(result.status, 3, result.stderr);
+  const output = JSON.parse(result.stdout);
+  assert.equal(output.decision, 'BLOCK');
+});
+
+test('fleet scans a quick local product and returns aggregate JSON', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'artisys-cli-fleet-'));
+  const productRoot = join(root, 'product');
+  await mkdir(productRoot);
+  await writeFile(join(productRoot, 'package.json'), JSON.stringify({ name: 'fleet-demo' }), 'utf8');
+  const configPath = join(root, 'fleet.yml');
+  await writeFile(configPath, `schema: 1\nproducts:\n  - id: fleet-demo\n    root: ${JSON.stringify(productRoot)}\n    profile: quick\n`, 'utf8');
+
+  const result = runCli(['fleet', configPath]);
+  assert.equal(result.status, 0, result.stderr);
+  const output = JSON.parse(result.stdout);
+  assert.equal(output.products[0].id, 'fleet-demo');
+  assert.equal(output.decision, 'PASS');
+});
+
+test('dashboard writes static fleet dashboard files', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'artisys-cli-dashboard-'));
+  const reportPath = join(root, 'fleet.json');
+  const outputDir = join(root, 'dashboard');
+  await writeFile(reportPath, JSON.stringify({
+    complete: true,
+    decision: 'PASS',
+    summary: { pass: 1, warn: 0, block: 0 },
+    products: [{
+      id: 'produto',
+      root: '.',
+      profile: 'quick',
+      report: { productId: 'produto', profile: 'quick', passed: true, complete: true, findings: [], checks: [], evidence: [] },
+      gate: { decision: 'PASS', blocked: false, reasons: [], summary: { critical: 0, high: 0, medium: 0, low: 0, info: 0, unknown: 0 } },
+    }],
+  }), 'utf8');
+
+  const result = runCli(['dashboard', reportPath, outputDir]);
+  assert.equal(result.status, 0, result.stderr);
+  const output = JSON.parse(result.stdout);
+  assert.ok(output.files.includes('index.html'));
+  assert.ok(output.files.includes('dashboard.json'));
+});
+
 test('unknown command exits non-zero and prints usage', () => {
   const result = runCli(['nope']);
 
