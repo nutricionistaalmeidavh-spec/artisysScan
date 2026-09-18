@@ -2,8 +2,9 @@ import { resolve } from 'node:path';
 
 import { loadManifest } from '../../../packages/contracts/src/index.js';
 import { discoverProject } from '../../../packages/core/src/index.js';
+import { runSourceSecurity } from '../../../packages/security/src/index.js';
 
-const USAGE = `Usage:\n  artisys-scan validate <manifest>\n  artisys-scan discover <root>\n`;
+const USAGE = `Usage:\n  artisys-scan validate <manifest>\n  artisys-scan discover <root>\n  artisys-scan security <root>\n`;
 
 export async function main(args: string[] = process.argv.slice(2)): Promise<number> {
   const [command, target] = args;
@@ -24,6 +25,12 @@ export async function main(args: string[] = process.argv.slice(2)): Promise<numb
       const result = await discoverProject(resolve(target));
       process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
       return 0;
+    }
+
+    if (command === 'security') {
+      const report = await runSourceSecurity(resolve(target));
+      process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
+      return report.complete ? 0 : 2;
     }
 
     process.stderr.write(USAGE);
