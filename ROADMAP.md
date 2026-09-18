@@ -2,10 +2,11 @@
 
 ## Estratégia de CI
 
-- **Desenvolvimento:** GitHub Actions em repositório público, sem release automático.
-- **Operação final:** Woodpecker self-hosted + agents Linux/Windows.
+- **Push confiável:** Woodpecker self-hosted no agent Windows local.
+- **Pull request:** GitHub Actions hospedado para isolamento de código de PR.
+- **Operação pesada/release:** Woodpecker manual no agent Windows; release exige `privilege=elevated`.
 - **Regra:** a lógica do scan pertence ao CLI; CI apenas orquestra comandos.
-- **Fallback:** GitHub Actions permanece disponível manualmente após a migração, sem ser dependência operacional.
+- **Fallback:** GitHub Actions permanece disponível manualmente e para PRs.
 
 ## Fases
 
@@ -24,12 +25,12 @@
 - [x] **12 — Installer Scanner:** workflow declarativo e sem shell na ordem build → instalador → instalação → execução → QA → security; o instalador é produzido antes do QA e permanece como evidência mesmo se uma etapa posterior falhar.
 - [x] **13 — Update Scanner:** validação de `latest.yml`, `version`, `path`, `sha512`, instalador e blockmap; cenário adaptável de atualização, restart, persistência de dados e rollback.
 - [x] **14 — Reporter:** resumo no terminal e bundle com HTML, JSON, SARIF 2.1, JUnit, evidências e cópia preservada do SBOM CycloneDX.
-- [x] **15 — GitHub Actions:** `scan-quick` automático para push/PR, `scan-full` manual/reutilizável e `scan-manual` com perfis quick/full/release; workflow legado permanece somente como fallback manual e nenhum workflow publica release automaticamente.
-- [ ] **16 — Release Gate:** PASS/WARN/BLOCK com políticas críticas.
-- [ ] **17 — Fleet Scanner:** scan de múltiplos produtos em uma execução.
-- [ ] **18 — Dashboard:** visão central dos produtos e findings.
-- [ ] **19 — Woodpecker:** ativar pipelines e agents self-hosted somente quando o produto estiver estável.
-- [ ] **20 — Migração operacional:** Woodpecker como CI principal; Actions como fallback/manual.
+- [x] **15 — GitHub Actions:** `scan-quick` hospedado para PR/manual e workflows full/manual como fallback; nenhum workflow publica release automaticamente.
+- [x] **16 — Release Gate:** PASS/WARN/BLOCK com política padrão e override configurável.
+- [x] **17 — Fleet Scanner:** múltiplos produtos, concorrência limitada, falha isolada e decisão agregada.
+- [x] **18 — Dashboard:** HTML/JSON estático com visão central PASS/WARN/BLOCK e findings por produto.
+- [ ] **19 — Woodpecker:** workflows `quick`, `full`, `fleet` e `release-windows` estão no repositório; falta confirmar uma execução real após habilitação do projeto no servidor.
+- [ ] **20 — Migração operacional:** eventos já migrados no Git (`push` → Woodpecker; PR/manual → Actions); falta confirmar o primeiro `quick` real no Woodpecker.
 
 ## Regra de segurança do discovery
 
@@ -45,6 +46,6 @@ O discovery pode inferir tecnologias objetivamente observáveis, mas **não deve
 - Desktop/Electron é análise estática do projeto e não inicializa o aplicativo alvo.
 - O Installer Scanner só executa comandos declarados pelo produto quando `--allow-project-exec` é fornecido; os processos usam `shell: false`.
 - A inspeção de artefatos de update é estática. O cenário de update/restart/rollback usa um adapter explícito do ambiente de teste.
-- O perfil `release` do GitHub Actions ainda é verificação manual; publicação automática só poderá ser habilitada após o Release Gate e a integração operacional planejada.
 - Tokens e credenciais não ficam no YAML. O contrato guarda somente nomes `tokenEnv`; os valores vêm de secrets do CI ou variáveis de ambiente locais.
 - Se uma etapa necessária é pulada ou uma credencial/ferramenta está ausente, o relatório fica `complete: false` em vez de declarar sucesso silenciosamente.
+- O backend Woodpecker `local` não recebe eventos de `pull_request` neste repositório público; PRs usam runner hospedado do GitHub Actions.
