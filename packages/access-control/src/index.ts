@@ -48,9 +48,12 @@ export interface ApiEndpoint {
   method: HttpMethod;
   path: string;
   auth: 'required' | 'optional' | 'none';
+  actorId?: string;
   body?: unknown;
   invalidBody?: unknown;
   rateLimitProbe?: number;
+  bolaPath?: string;
+  massAssignmentBody?: unknown;
 }
 
 export interface TenantRoute {
@@ -78,7 +81,7 @@ export interface AccessPolicyV1 {
 const METHODS = new Set<HttpMethod>(['GET', 'HEAD', 'OPTIONS', 'POST', 'PUT', 'PATCH', 'DELETE']);
 const ACTOR_KEYS = new Set(['id', 'role', 'tokenEnv', 'tenant']);
 const ACTION_KEYS = new Set(['id', 'method', 'path', 'allowRoles', 'body', 'privileged', 'auditCheck']);
-const ENDPOINT_KEYS = new Set(['id', 'method', 'path', 'auth', 'body', 'invalidBody', 'rateLimitProbe']);
+const ENDPOINT_KEYS = new Set(['id', 'method', 'path', 'auth', 'actorId', 'body', 'invalidBody', 'rateLimitProbe', 'bolaPath', 'massAssignmentBody']);
 const ROUTE_KEYS = new Set(['id', 'method', 'path', 'resourceKey', 'body']);
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -160,6 +163,7 @@ function parseEndpoint(value: unknown, index: number): ApiEndpoint {
     path: asString(value.path, `api endpoint ${index}.path`),
     auth: auth as ApiEndpoint['auth'],
   };
+  if (value.actorId !== undefined) endpoint.actorId = asString(value.actorId, `api endpoint ${index}.actorId`);
   if ('body' in value) endpoint.body = value.body;
   if ('invalidBody' in value) endpoint.invalidBody = value.invalidBody;
   if (value.rateLimitProbe !== undefined) {
@@ -168,6 +172,8 @@ function parseEndpoint(value: unknown, index: number): ApiEndpoint {
     }
     endpoint.rateLimitProbe = Number(value.rateLimitProbe);
   }
+  if (value.bolaPath !== undefined) endpoint.bolaPath = asString(value.bolaPath, `api endpoint ${index}.bolaPath`);
+  if ('massAssignmentBody' in value) endpoint.massAssignmentBody = value.massAssignmentBody;
   return endpoint;
 }
 
