@@ -1,0 +1,81 @@
+import assert from 'node:assert/strict';
+import { join } from 'node:path';
+import test from 'node:test';
+
+import {
+  createSupplyChainPlan,
+  normalizeTrivySupplyChain,
+  summarizeCycloneDx,
+} from '../src/index.ts';
+
+test('supply chain plan generates CycloneDX and scans vulnerabilities/licenses with open-source tools', () => {
+  const plan = createSupplyChainPlan('/tmp/product', '/tmp/report');
+
+  assert.equal(plan.length, 3);
+  assert.equal(plan[0].tool, 'trivy');
+  assert.ok(plan[0].args.includes('cyclonedx'));
+  assert.ok(plan[0].args.includes(join('/tmp/report', 'sbom.cdx.json')));
+
+  assert.equal(plan[1].tool, 'trivy');
+  assert.ok(plan[1].args.includes('vuln,license'));
+  assert.ok(plan[1].args.includes('--license-full'));
+  assert.ok(plan[1].args.includes('json'));
+
+  assert.equal(plan[2].tool, 'osv-scanner');
+  assert.deepEqual(plan[2].args.slice(0, 3), ['scan', 'source', '--format=json']);
+
+  for (const command of plan) assert.equal(command.shell, false);
+});
+
+test('normalizes dependency vulnerabilities and license findings from Trivy JSON', () => {
+  const report = normalizeTrivySupplyChain(JSON.stringify({
+    Results: [{
+      Target: 'package-lock.json',
+      Vulnerabilities: [{
+        VulnerabilityID: 'CVE-2026-0001',
+        PkgName: 'demo-lib',
+        InstalledVersion: '1.0.0',
+        FixedVersion: '1.0.1',
+        Title: 'Demo vulnerability',
+        Severity: 'HIGH',
+      }],
+      Licenses: [{
+        Name: 'GPL-3.0-only',
+        Category: 'restricted',
+        Severity: 'HIGH',
+        PkgName: 'copyleft-lib',
+      }],
+    }],
+  }));
+
+  assert.equal(report.vulnerabilities.length, 1);
+  assert.equal(report.vulnerabilities[0].id, 'CVE-2026-0001');
+  assert.equal(report.vulnerabilities[0].fixedVersion, '1.0.1');
+  assert.equal(report.licenses.length, 1);
+  assert.equal(report.licenses[0].license, 'GPL-3.0-only');
+  assert.equal(report.licenses[0].classification, 'restricted');
+});
+
+test('summarizes a CycloneDX document without discarding the original artifact', () => {
+  const summary = summarizeCycloneDx(JSON.stringify({
+    bomFormat: 'CycloneDX',
+    specVersion: '1.6',
+    components: [
+      { type: 'library', name: 'a', version: '1.0.0' },
+      { type: 'library', name: 'b', version: '2.0.0' },
+    ],
+    dependencies: [
+      { ref: 'a', dependsOn: ['b'] },
+      { ref: 'b', dependsOn: [] },
+    ],
+  }));
+
+  assert.equal(summary.format, 'CycloneDX');
+  assert.equal(summary.specVersion, '1.6');
+  assert.equal(summary.components, 2);
+  assert.equal(summary.dependencyEdges, 1);
+});
+
+test('rejects a non-CycloneDX SBOM instead of treating it as valid', () => {
+  assert.throws(() => summarizeCycloneDx('{"bomFormat":"SPDX"}'), /CycloneDX/i);
+});
