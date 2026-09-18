@@ -1,7 +1,16 @@
-# Woodpecker — reservado para a fase operacional
+# Woodpecker CI
 
-O repositório **não deve ser ativado no Woodpecker durante as fases iniciais de desenvolvimento**.
+A lógica de scan continua no CLI; os workflows apenas orquestram os mesmos comandos usados localmente e no GitHub Actions.
 
-A arquitetura do ArtiSys Scan mantém toda a lógica no CLI para que GitHub Actions e Woodpecker apenas chamem os mesmos comandos. Na fase final serão adicionados os pipelines `quick`, `full`, `release` e `fleet`, incluindo o agent Windows para Electron/instaladores.
+Arquivos:
 
-Até lá, GitHub Actions executa somente CI de desenvolvimento e não publica releases.
+- `quick.yml`: verificação automática em `push` confiável no agent Windows local;
+- `full.yml`: verificação manual completa do engine;
+- `fleet.yml`: execução manual do Fleet Scanner e geração do Dashboard;
+- `release-windows.yml`: verificação manual de release, roteada ao agent Windows com `privilege=elevated`.
+
+Por segurança, nenhum workflow Woodpecker aceita `pull_request`: o backend `local` não oferece isolamento e este repositório é público. PRs continuam validados em runner hospedado pelo GitHub Actions.
+
+Nenhum workflow cria ou publica release automaticamente.
+
+Veja `docs/WOODPECKER_ACTIVATION.md` para ativação e validação no servidor.
