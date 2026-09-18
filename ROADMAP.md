@@ -9,9 +9,9 @@
 
 ## Fases
 
-- [ ] **0 — Fundação:** monorepo Node 22/TypeScript, CLI, packages, documentação e CI de desenvolvimento.
-- [ ] **1 — Contrato universal:** `.artisys/scan.yml`, JSON Schema, tipos e validação.
-- [ ] **2 — Discovery automático:** detectar stack, runtime, banco, QA, installer e produzir manifesto sugerido seguro.
+- [x] **0 — Fundação:** monorepo Node 22/TypeScript, CLI, packages, documentação e CI de desenvolvimento.
+- [x] **1 — Contrato universal:** `.artisys/scan.yml`, JSON Schema, tipos e validação.
+- [x] **2 — Discovery automático:** detectar stack, runtime, banco, QA, installer e produzir manifesto sugerido seguro.
 - [ ] **3 — Source Security:** Semgrep CE, Trivy, Gitleaks e OSV-Scanner.
 - [ ] **4 — SBOM / Supply Chain:** CycloneDX, dependências, licenças e vulnerabilidades.
 - [ ] **5 — QA Engine:** integração com Playwright/artisys-qa, screenshots, vídeos, traces, console e network.
