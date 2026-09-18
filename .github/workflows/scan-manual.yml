@@ -1,0 +1,47 @@
+name: scan-manual
+
+on:
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: Scan profile
+        required: true
+        default: quick
+        type: choice
+        options:
+          - quick
+          - full
+          - release
+
+permissions:
+  contents: read
+
+jobs:
+  manual:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package.json
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Quick profile
+        if: ${{ inputs.profile == 'quick' }}
+        run: npm run ci
+      - name: Full profile
+        if: ${{ inputs.profile == 'full' }}
+        run: |
+          npm run ci
+          npm run scan -- security . || true
+          npm run scan -- supply-chain . artifacts/supply-chain || true
+      - name: Release verification profile
+        if: ${{ inputs.profile == 'release' }}
+        run: |
+          npm run ci
+          echo "Release verification selected. Installer/update execution remains opt-in and no release is published."
+
+# Manual orchestration only. Release publication is intentionally absent.
