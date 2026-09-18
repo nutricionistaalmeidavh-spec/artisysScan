@@ -2,6 +2,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import type { FleetReport } from '../../fleet/src/index.js';
+export type { FleetReport } from '../../fleet/src/index.js';
 
 function escapeHtml(value: string): string {
   return value
