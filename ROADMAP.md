@@ -15,11 +15,11 @@
 - [x] **3 — Source Security:** Semgrep CE com regras locais, Trivy, Gitleaks e OSV-Scanner, runner sem shell e findings normalizados sem expor segredos brutos.
 - [x] **4 — SBOM / Supply Chain:** CycloneDX preservado como artefato, dependências, licenças e vulnerabilidades via Trivy + OSV-Scanner.
 - [x] **5 — QA Engine:** descoberta de Playwright/scripts QA existentes, screenshots, vídeos, traces, JSON/HTML, console e network via trace, com execução do projeto-alvo somente após autorização explícita.
-- [ ] **6 — Web Scanner:** headers, CSP, CORS, cookies, HTTPS, sessão, CSRF, XSS, uploads, debug e leakage.
-- [ ] **7 — API Scanner:** autenticação, IDOR/BOLA, mass assignment, tenant/company IDs, rate limit e entrada.
-- [ ] **8 — RBAC Scanner:** matriz de papéis × ações com teste direto de API.
-- [ ] **9 — Multitenant Scanner:** isolamento read/create/update/delete e manipulação de tenant/company IDs.
-- [ ] **10 — Admin / Superadmin:** escalada, endpoints privilegiados, licença, impersonation e auditoria.
+- [x] **6 — Web Scanner:** HTTPS, headers, CSP, HSTS, cookies, banners/leakage, CORS com origem não confiável, heurística de CSRF, superfície de upload e reflexão ativa opt-in.
+- [x] **7 — API Scanner:** autenticação anônima/token inválido, entrada inválida, rate limit, BOLA/IDOR configurável e mass assignment, com mutações bloqueadas por padrão.
+- [x] **8 — RBAC Scanner:** matriz atores/papéis × ações com teste HTTP direto, detecção de acesso negado aceito e divergência entre política e implementação.
+- [x] **9 — Multitenant Scanner:** pares A→B/B→A, substituição de `tenantId`/`resourceId`, isolamento read/create/update/delete e findings críticos para qualquer acesso cross-tenant bem-sucedido.
+- [x] **10 — Admin / Superadmin:** fronteira de privilégio, ações exclusivas, execução de auditoria configurada e evidência de trilha administrativa.
 - [ ] **11 — Desktop / Electron:** contextIsolation, sandbox, IPC, preload, navegação, filesystem, tokens e SQLite.
 - [ ] **12 — Installer Scanner:** build → instalador → instalação → execução → QA → security.
 - [ ] **13 — Update Scanner:** atualização, hash, restart, persistência, rollback, latest.yml e blockmap.
@@ -35,6 +35,11 @@
 
 O discovery pode inferir tecnologias objetivamente observáveis, mas **não deve assumir** autenticação, RBAC, multitenancy ou superadmin. Essas capacidades são marcadas como `review` até declaração explícita no manifesto. Isso evita que um scan crítico seja pulado silenciosamente.
 
-## Regra de execução
+## Regras de execução segura
 
-Scans estáticos não executam código do sistema analisado. O QA E2E é a exceção necessária: como Playwright/scripts QA executam o projeto-alvo, o CLI exige autorização explícita com `--allow-project-exec`. O ArtiSys Scan não instala Playwright nem dependências do alvo silenciosamente.
+- Scans estáticos não executam código do sistema analisado.
+- QA E2E exige `--allow-project-exec` porque Playwright/scripts QA executam o projeto-alvo.
+- Web Scanner executa baseline e probe CORS por `GET`; a reflexão ativa só roda com `--allow-active`.
+- API, RBAC, Multitenant e Admin/Superadmin não executam `POST`, `PUT`, `PATCH` ou `DELETE` sem `--allow-state-change`.
+- Tokens e credenciais não ficam no YAML. O contrato guarda somente nomes `tokenEnv`; os valores vêm de secrets do CI ou variáveis de ambiente locais.
+- Se uma etapa necessária é pulada ou uma credencial/ferramenta está ausente, o relatório fica `complete: false` em vez de declarar sucesso silenciosamente.
