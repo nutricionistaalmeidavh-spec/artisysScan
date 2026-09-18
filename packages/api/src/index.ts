@@ -3,13 +3,14 @@ import {
   isStateChanging,
   isSuccess,
   joinUrl,
+  resolveActorHeaders,
   type AccessPolicyV1,
   type HttpMethod,
   type HttpResponse,
   type HttpTransport,
 } from '../../access-control/src/index.js';
 
-export type ApiCaseKind = 'anonymous' | 'invalid-token' | 'invalid-input' | 'rate-limit';
+export type ApiCaseKind = 'anonymous' | 'invalid-token' | 'invalid-input' | 'rate-limit' | 'bola' | 'mass-assignment';
 
 export interface ApiCase {
   id: string;
@@ -19,6 +20,7 @@ export interface ApiCase {
   url: string;
   expected: 'allow' | 'deny' | 'reject-input' | 'rate-limit';
   stateChanging: boolean;
+  actorId?: string;
   headers?: Record<string, string>;
   body?: unknown;
   repeat?: number;
@@ -52,10 +54,16 @@ export function createApiCases(policy: AccessPolicyV1): ApiCase[] {
       cases.push({ id: `${endpoint.id}:invalid-token`, endpointId: endpoint.id, kind: 'invalid-token', method: endpoint.method, url, expected: 'deny', stateChanging, headers: { authorization: 'Bearer ARTISYS_INVALID_TOKEN' }, ...(endpoint.body !== undefined ? { body: endpoint.body } : {}) });
     }
     if (endpoint.invalidBody !== undefined) {
-      cases.push({ id: `${endpoint.id}:invalid-input`, endpointId: endpoint.id, kind: 'invalid-input', method: endpoint.method, url, expected: 'reject-input', stateChanging, body: endpoint.invalidBody });
+      cases.push({ id: `${endpoint.id}:invalid-input`, endpointId: endpoint.id, kind: 'invalid-input', method: endpoint.method, url, expected: 'reject-input', stateChanging, ...(endpoint.actorId ? { actorId: endpoint.actorId } : {}), body: endpoint.invalidBody });
     }
     if (endpoint.rateLimitProbe) {
-      cases.push({ id: `${endpoint.id}:rate-limit`, endpointId: endpoint.id, kind: 'rate-limit', method: endpoint.method, url, expected: 'rate-limit', stateChanging, repeat: endpoint.rateLimitProbe, ...(endpoint.body !== undefined ? { body: endpoint.body } : {}) });
+      cases.push({ id: `${endpoint.id}:rate-limit`, endpointId: endpoint.id, kind: 'rate-limit', method: endpoint.method, url, expected: 'rate-limit', stateChanging, repeat: endpoint.rateLimitProbe, ...(endpoint.actorId ? { actorId: endpoint.actorId } : {}), ...(endpoint.body !== undefined ? { body: endpoint.body } : {}) });
+    }
+    if (endpoint.bolaPath) {
+      cases.push({ id: `${endpoint.id}:bola`, endpointId: endpoint.id, kind: 'bola', method: endpoint.method, url: joinUrl(policy.baseUrl, endpoint.bolaPath), expected: 'deny', stateChanging, ...(endpoint.actorId ? { actorId: endpoint.actorId } : {}) });
+    }
+    if (endpoint.massAssignmentBody !== undefined) {
+      cases.push({ id: `${endpoint.id}:mass-assignment`, endpointId: endpoint.id, kind: 'mass-assignment', method: endpoint.method, url, expected: 'reject-input', stateChanging, ...(endpoint.actorId ? { actorId: endpoint.actorId } : {}), body: endpoint.massAssignmentBody });
     }
   }
   return cases;
@@ -70,6 +78,20 @@ export function evaluateApiCase(testCase: ApiCase, response: HttpResponse): ApiF
       endpointId: testCase.endpointId,
       caseId: testCase.id,
       status: response.status,
+    };
+  }
+  if (testCase.kind === 'bola' && isSuccess(response.status)) {
+    return {
+      ruleId: 'ARTISYS-API-BOLA-001', severity: 'critical',
+      message: 'Configured BOLA/IDOR probe returned a successful response for a resource that should be denied.',
+      endpointId: testCase.endpointId, caseId: testCase.id, status: response.status,
+    };
+  }
+  if (testCase.kind === 'mass-assignment' && isSuccess(response.status)) {
+    return {
+      ruleId: 'ARTISYS-API-MASS-001', severity: 'high',
+      message: 'Endpoint accepted the configured mass-assignment payload.',
+      endpointId: testCase.endpointId, caseId: testCase.id, status: response.status,
     };
   }
   if (testCase.kind === 'invalid-input' && isSuccess(response.status)) {
@@ -89,8 +111,10 @@ function hasRateLimitEvidence(responses: HttpResponse[]): boolean {
 export async function runApiScan(policy: AccessPolicyV1, options: {
   transport?: HttpTransport;
   allowStateChange?: boolean;
+  env?: NodeJS.ProcessEnv;
 } = {}): Promise<ApiScanReport> {
   const transport = options.transport ?? defaultHttpTransport;
+  const env = options.env ?? process.env;
   const findings: ApiFinding[] = [];
   const errors: string[] = [];
   let executed = 0;
@@ -102,6 +126,12 @@ export async function runApiScan(policy: AccessPolicyV1, options: {
       continue;
     }
     try {
+      let headers = testCase.headers ?? {};
+      if (testCase.actorId && testCase.kind !== 'invalid-token' && testCase.kind !== 'anonymous') {
+        const actor = policy.actors.find((item) => item.id === testCase.actorId);
+        if (!actor) throw new Error(`actor ${testCase.actorId} not found`);
+        headers = { ...headers, ...resolveActorHeaders(actor, env) };
+      }
       const responses: HttpResponse[] = [];
       const repeat = testCase.repeat ?? 1;
       for (let index = 0; index < repeat; index += 1) {
@@ -109,7 +139,7 @@ export async function runApiScan(policy: AccessPolicyV1, options: {
           method: testCase.method,
           url: testCase.url,
           kind: testCase.kind,
-          ...(testCase.headers ? { headers: testCase.headers } : {}),
+          ...(Object.keys(headers).length > 0 ? { headers } : {}),
           ...(testCase.body !== undefined ? { body: testCase.body } : {}),
         }));
         executed += 1;
