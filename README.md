@@ -12,6 +12,7 @@ As Fases 0–10 estão implementadas:
 - SBOM CycloneDX, vulnerabilidades e licenças;
 - QA Engine para Playwright/scripts QA existentes, com screenshots, vídeos, traces e relatórios;
 - Web Scanner para HTTPS/headers/CSP/cookies/CORS/leakage, superfícies de CSRF/upload e reflexão opt-in;
+- perfil Web DAST opt-in com OWASP ZAP Baseline e Nuclei;
 - API Scanner para autenticação, entrada inválida, rate limit, BOLA/IDOR e mass assignment;
 - RBAC Scanner por matriz de atores/papéis × ações;
 - Multitenant Scanner para isolamento entre tenants A/B;
@@ -47,12 +48,24 @@ npm run scan -- discover /caminho/do/projeto
 npm run scan -- security /caminho/do/projeto
 npm run scan -- supply-chain /caminho/do/projeto [/pasta/de/relatorios]
 npm run scan -- qa /caminho/do/projeto [/pasta/de/relatorios] --allow-project-exec
-npm run scan -- web https://app.exemplo.com [--allow-active]
+npm run scan -- web https://app.exemplo.com
+npm run scan -- web https://app.exemplo.com [/pasta/de/relatorios] --dast
+npm run scan -- web https://app.exemplo.com [/pasta/de/relatorios] --dast --allow-active
 npm run scan -- api /caminho/access.yml [--allow-state-change]
 npm run scan -- rbac /caminho/access.yml [--allow-state-change]
 npm run scan -- tenant /caminho/access.yml [--allow-state-change]
 npm run scan -- admin /caminho/access.yml [--allow-state-change]
 ```
+
+## Web / DAST
+
+Sem `--dast`, o scanner web usa o engine ArtiSys para baseline HTTP, headers/cookies, CORS, leakage e superfícies de revisão. Com `--dast`:
+
+- OWASP ZAP Baseline roda em `ghcr.io/zaproxy/zaproxy:stable` via Docker e gera `zap.json` + `zap.html`;
+- Nuclei só entra quando `--allow-active` também é fornecido e gera `nuclei.jsonl`;
+- ambos são executados sem shell e os findings são normalizados sem copiar corpos de resposta para o resumo.
+
+O perfil DAST exige Docker disponível no `PATH`; o perfil ativo também exige o binário `nuclei` no `PATH`. Se uma ferramenta solicitada estiver ausente, o relatório fica incompleto em vez de receber falso PASS.
 
 ## Contrato de acesso — Fases 7–10
 
@@ -79,6 +92,7 @@ Nunca coloque esses valores no `access.yml`.
 ### Segurança de execução
 
 - `web` faz baseline e CORS com `GET` por padrão; a probe de reflexão só entra com `--allow-active`.
+- `web --dast` usa ZAP Baseline; Nuclei só roda com `--allow-active`.
 - `api`, `rbac`, `tenant` e `admin` pulam `POST`, `PUT`, `PATCH` e `DELETE` sem `--allow-state-change` e devolvem `complete: false`.
 - `qa` exige `--allow-project-exec` porque testes E2E executam código do alvo.
 - Execute testes ativos e mutações somente em sistemas/ambientes que você controla e preparou para teste.
@@ -92,6 +106,11 @@ Para Source Security/Supply Chain completos, o ambiente deve ter no `PATH`:
 - Gitleaks;
 - OSV-Scanner.
 
-Todas são executadas localmente. Se uma ferramenta obrigatória estiver ausente, o relatório fica incompleto em vez de receber um falso PASS.
+Para Web DAST:
+
+- Docker para OWASP ZAP Baseline;
+- Nuclei para o perfil ativo opcional.
+
+Todas são executadas localmente/self-hosted. Se uma ferramenta obrigatória do perfil solicitado estiver ausente, o relatório fica incompleto em vez de receber um falso PASS.
 
 Veja `ROADMAP.md` para as próximas fases.
