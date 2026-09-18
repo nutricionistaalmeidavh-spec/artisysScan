@@ -3,11 +3,12 @@ import { resolve } from 'node:path';
 import { loadManifest } from '../../../packages/contracts/src/index.js';
 import { discoverProject } from '../../../packages/core/src/index.js';
 import { runSourceSecurity } from '../../../packages/security/src/index.js';
+import { runSupplyChain } from '../../../packages/supply-chain/src/index.js';
 
-const USAGE = `Usage:\n  artisys-scan validate <manifest>\n  artisys-scan discover <root>\n  artisys-scan security <root>\n`;
+const USAGE = `Usage:\n  artisys-scan validate <manifest>\n  artisys-scan discover <root>\n  artisys-scan security <root>\n  artisys-scan supply-chain <root> [output-dir]\n`;
 
 export async function main(args: string[] = process.argv.slice(2)): Promise<number> {
-  const [command, target] = args;
+  const [command, target, extra] = args;
 
   if (!command || !target) {
     process.stderr.write(USAGE);
@@ -29,6 +30,12 @@ export async function main(args: string[] = process.argv.slice(2)): Promise<numb
 
     if (command === 'security') {
       const report = await runSourceSecurity(resolve(target));
+      process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
+      return report.complete ? 0 : 2;
+    }
+
+    if (command === 'supply-chain') {
+      const report = await runSupplyChain(resolve(target), extra ? { outputDir: resolve(extra) } : {});
       process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
       return report.complete ? 0 : 2;
     }
