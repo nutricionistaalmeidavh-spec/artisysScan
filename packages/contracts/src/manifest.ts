@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 
-import Ajv, { type ErrorObject } from 'ajv';
+import Ajv, { type ErrorObject } from 'ajv/dist/ajv.js';
 import { parse } from 'yaml';
 
 import schema from '../schema/artisys-scan.schema.json' with { type: 'json' };
