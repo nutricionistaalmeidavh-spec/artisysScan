@@ -16,10 +16,11 @@ export interface WebFinding {
 
 export interface WebProbe {
   id: string;
-  kind: 'baseline' | 'reflection';
+  kind: 'baseline' | 'cors' | 'reflection';
   method: 'GET';
   url: string;
   marker?: string;
+  headers?: Record<string, string>;
 }
 
 export interface WebScanReport {
@@ -43,6 +44,28 @@ function cookies(headers: Record<string, string | string[]>): string[] {
   const value = headers['set-cookie'];
   if (!value) return [];
   return Array.isArray(value) ? value : [value];
+}
+
+function inspectHtmlSurfaces(url: string, body: string): WebFinding[] {
+  const findings: WebFinding[] = [];
+  const stateChangingForms = body.match(/<form\b[^>]*method=["']?(?:post|put|patch|delete)["']?[^>]*>[\s\S]*?<\/form>/gi) ?? [];
+  if (stateChangingForms.some((form) => !/(?:name|id)=["'][^"']*(?:csrf|xsrf|_token|authenticity_token)[^"']*["']/i.test(form))) {
+    findings.push({
+      ruleId: 'ARTISYS-WEB-CSRF-HEURISTIC-001',
+      severity: 'medium',
+      message: 'State-changing HTML form was found without an obvious CSRF token field. Review server-side CSRF defenses and SameSite policy.',
+      url,
+    });
+  }
+  if (/<input\b[^>]*type=["']?file["']?[^>]*>/i.test(body)) {
+    findings.push({
+      ruleId: 'ARTISYS-WEB-UPLOAD-SURFACE-001',
+      severity: 'info',
+      message: 'File-upload surface detected. Validate MIME, extension, size, storage location and authorization with a targeted test profile.',
+      url,
+    });
+  }
+  return findings;
 }
 
 export function assessWebResponse(url: string, response: HttpResponse): WebFinding[] {
@@ -78,12 +101,17 @@ export function assessWebResponse(url: string, response: HttpResponse): WebFindi
   const leak = leakPatterns.find((pattern) => pattern.test(response.body));
   if (leak) add('ARTISYS-WEB-LEAK-001', 'high', 'Response appears to expose a stack trace or local filesystem path.');
 
+  findings.push(...inspectHtmlSurfaces(url, response.body));
   return findings;
 }
 
 export function createWebScanPlan(target: string, options: { allowActive?: boolean } = {}): WebProbe[] {
   const base = new URL(target);
-  const probes: WebProbe[] = [{ id: 'baseline', kind: 'baseline', method: 'GET', url: base.toString() }];
+  const untrustedOrigin = 'https://artisys-untrusted.invalid';
+  const probes: WebProbe[] = [
+    { id: 'baseline', kind: 'baseline', method: 'GET', url: base.toString() },
+    { id: 'cors', kind: 'cors', method: 'GET', url: base.toString(), marker: untrustedOrigin, headers: { origin: untrustedOrigin } },
+  ];
   if (options.allowActive) {
     const marker = `ARTISYS_REFLECT_${Date.now().toString(36)}`;
     const reflection = new URL(base.toString());
@@ -91,6 +119,32 @@ export function createWebScanPlan(target: string, options: { allowActive?: boole
     probes.push({ id: 'reflection', kind: 'reflection', method: 'GET', url: reflection.toString(), marker });
   }
   return probes;
+}
+
+function evaluateCorsProbe(probe: WebProbe, response: HttpResponse): WebFinding[] {
+  const headers = lowerHeaders(response.headers);
+  const allowOrigin = headerValue(headers, 'access-control-allow-origin');
+  const credentials = headerValue(headers, 'access-control-allow-credentials')?.toLowerCase() === 'true';
+  if (!allowOrigin) return [];
+  if ((allowOrigin === probe.marker || allowOrigin === '*') && credentials) {
+    return [{
+      ruleId: 'ARTISYS-WEB-CORS-001',
+      severity: 'critical',
+      message: 'CORS allows an untrusted/wildcard origin together with credentials.',
+      url: probe.url,
+      evidence: `${allowOrigin}; credentials=true`,
+    }];
+  }
+  if (allowOrigin === probe.marker) {
+    return [{
+      ruleId: 'ARTISYS-WEB-CORS-001',
+      severity: 'high',
+      message: 'CORS reflected an untrusted Origin value.',
+      url: probe.url,
+      evidence: allowOrigin,
+    }];
+  }
+  return [];
 }
 
 export async function runWebScan(target: string, options: {
@@ -105,9 +159,10 @@ export async function runWebScan(target: string, options: {
 
   for (const probe of plan) {
     try {
-      const response = await transport({ method: probe.method, url: probe.url, kind: probe.kind });
+      const response = await transport({ method: probe.method, url: probe.url, kind: probe.kind, ...(probe.headers ? { headers: probe.headers } : {}) });
       probes.push({ id: probe.id, status: response.status });
       if (probe.kind === 'baseline') findings.push(...assessWebResponse(probe.url, response));
+      if (probe.kind === 'cors') findings.push(...evaluateCorsProbe(probe, response));
       if (probe.kind === 'reflection' && probe.marker && response.body.includes(probe.marker)) {
         findings.push({
           ruleId: 'ARTISYS-WEB-XSS-REFLECT-001',
@@ -124,5 +179,6 @@ export async function runWebScan(target: string, options: {
   }
 
   const unique = [...new Map(findings.map((finding) => [`${finding.ruleId}:${finding.url}:${finding.evidence ?? ''}`, finding])).values()];
-  return { target, complete, passed: complete && unique.length === 0, findings: unique, probes };
+  const blocking = unique.some((finding) => finding.severity === 'high' || finding.severity === 'critical');
+  return { target, complete, passed: complete && !blocking, findings: unique, probes };
 }
