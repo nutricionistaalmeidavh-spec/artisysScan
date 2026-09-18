@@ -1,0 +1,8 @@
+schema: 1
+products:
+  - id: artisys-scan
+    root: .
+    profile: quick
+  - id: artisys-cli
+    root: apps/cli
+    profile: quick
