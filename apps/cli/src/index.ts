@@ -290,7 +290,7 @@ export async function main(args: string[] = process.argv.slice(2)): Promise<numb
     if (command === 'dashboard') {
       const report = JSON.parse(await readFile(resolve(target), 'utf8')) as FleetReport;
       const requestedDir = rest.find((value) => !value.startsWith('--'));
-      const outputDir = resolve(requestedOutput ?? '.artisys/dashboard');
+      const outputDir = resolve(requestedDir ?? '.artisys/dashboard');
       const bundle = await writeFleetDashboard(report, outputDir);
       process.stdout.write(`${JSON.stringify(bundle, null, 2)}\n`);
       return 0;
