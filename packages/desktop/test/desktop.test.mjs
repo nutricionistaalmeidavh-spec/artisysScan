@@ -63,3 +63,23 @@ test('flags tracked SQLite databases and obvious token persistence artifacts', (
   assert.ok(ids.includes('ARTISYS-DESKTOP-DATA-001'));
   assert.ok(ids.includes('ARTISYS-DESKTOP-TOKEN-001'));
 });
+
+test('does not treat QA/test fixture names as persisted authentication material', () => {
+  const findings = analyzeDesktopArtifacts([
+    'qa/flows/01-auth.json',
+    'test/fixtures/session.json',
+    'tests/mocks/token-response.json',
+    'e2e/fixtures/credential-flow.json',
+  ]);
+  assert.equal(findings.some((finding) => finding.ruleId === 'ARTISYS-DESKTOP-TOKEN-001'), false);
+});
+
+test('still flags production-like authentication artifacts outside test scopes', () => {
+  const findings = analyzeDesktopArtifacts([
+    'logs/session.json',
+    'runtime/auth-cache.txt',
+    'data/credential-state.json',
+  ]);
+  const tokenFindings = findings.filter((finding) => finding.ruleId === 'ARTISYS-DESKTOP-TOKEN-001');
+  assert.equal(tokenFindings.length, 3);
+});
