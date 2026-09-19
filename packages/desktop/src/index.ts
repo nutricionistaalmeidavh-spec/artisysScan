@@ -24,6 +24,14 @@ function finding(ruleId: string, severity: DesktopSeverity, message: string, pat
   return { tool: 'desktop', ruleId, severity, message, ...(path ? { path } : {}) };
 }
 
+function hasStrictExternalUrlAllowlist(source: string): boolean {
+  return /new\s+URL\s*\(/.test(source)
+    && /\.protocol\s*===\s*['"]https:['"]/.test(source)
+    && /\.hostname\s*===\s*['"][A-Za-z0-9.-]+['"]/.test(source)
+    && /\.pathname/.test(source)
+    && /return\s*\{\s*action\s*:\s*['"]deny['"]\s*\}/.test(source);
+}
+
 export function analyzeElectronText(path: string, source: string): DesktopFinding[] {
   const findings: DesktopFinding[] = [];
   const rules: Array<[RegExp, string, DesktopSeverity, string]> = [
@@ -34,13 +42,15 @@ export function analyzeElectronText(path: string, source: string): DesktopFindin
     [/loadURL\s*\(\s*['"]http:\/\//gi, 'ARTISYS-ELECTRON-005', 'high', 'Electron loads remote content over insecure HTTP.'],
     [/devTools\s*:\s*true/gi, 'ARTISYS-ELECTRON-006', 'low', 'DevTools are explicitly enabled; verify release behavior.'],
     [/contextBridge\.exposeInMainWorld\s*\([^,]+,\s*ipcRenderer\s*\)/gi, 'ARTISYS-ELECTRON-007', 'critical', 'Preload exposes ipcRenderer directly to renderer code.'],
-    [/shell\.openExternal\s*\(/gi, 'ARTISYS-ELECTRON-008', 'medium', 'shell.openExternal usage requires strict URL allowlisting.'],
     [/localStorage\.setItem\s*\(\s*['"][^'"]*(token|secret|jwt|session)/gi, 'ARTISYS-DESKTOP-TOKEN-002', 'high', 'Sensitive authentication material appears to be persisted in localStorage.'],
     [/console\.(log|info|debug)\s*\([^\n]*(token|secret|jwt|session)/gi, 'ARTISYS-DESKTOP-TOKEN-003', 'medium', 'Potential authentication material is written to application logs.'],
   ];
   for (const [pattern, ruleId, severity, message] of rules) {
     pattern.lastIndex = 0;
     if (pattern.test(source)) findings.push(finding(ruleId, severity, message, path));
+  }
+  if (/shell\.openExternal\s*\(/.test(source) && !hasStrictExternalUrlAllowlist(source)) {
+    findings.push(finding('ARTISYS-ELECTRON-008', 'medium', 'shell.openExternal usage requires strict URL allowlisting.', path));
   }
   if (/ipcMain\.(handle|on)\s*\(/.test(source) && !/(senderFrame|event\.sender|event\.senderFrame|validateSender|isTrustedSender)/.test(source)) {
     findings.push(finding('ARTISYS-ELECTRON-009', 'medium', 'IPC handler found without observable sender validation; review the channel allowlist and sender origin.', path));
