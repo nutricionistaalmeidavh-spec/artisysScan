@@ -16,17 +16,19 @@ const input = {
     { ruleId: 'ARTISYS-WEB-001', severity: 'medium', message: '<missing CSP>', tool: 'web' },
   ],
   checks: [
-    { id: 'tenant', name: 'Multitenant', status: 'failed', durationMs: 25 },
+    { id: 'tenant', name: 'Multitenant', status: 'failed', durationMs: 25, tool: 'tenant', exitCode: 3, diagnostic: 'Cross-tenant request succeeded' },
     { id: 'web', name: 'Web', status: 'passed', durationMs: 10 },
   ],
   evidence: ['qa/video.webm', 'qa/trace.zip'],
 };
 
-test('terminal renderer shows overall status and severity counts', () => {
+test('terminal renderer shows overall status, severity counts and check diagnostics', () => {
   const text = renderTerminal(input);
   assert.match(text, /BLOCK|FAIL/i);
   assert.match(text, /critical\s*1/i);
   assert.match(text, /ARTISYS-TENANT-001/);
+  assert.match(text, /tenant.*tool=tenant.*exit=3/i);
+  assert.match(text, /Cross-tenant request succeeded/);
 });
 
 test('report bundle writes JSON, HTML, SARIF, JUnit, evidence and preserves SBOM', async () => {
@@ -38,8 +40,11 @@ test('report bundle writes JSON, HTML, SARIF, JUnit, evidence and preserves SBOM
   assert.deepEqual(result.files.sort(), ['evidence.json', 'findings.sarif', 'junit.xml', 'report.html', 'sbom.cdx.json', 'summary.json'].sort());
   const html = await readFile(join(output, 'report.html'), 'utf8');
   assert.match(html, /&lt;missing CSP&gt;/);
+  assert.match(html, /Cross-tenant request succeeded/);
+  assert.match(html, /<th>Diagnostic<\/th>/);
   const sarif = JSON.parse(await readFile(join(output, 'findings.sarif'), 'utf8'));
   assert.equal(sarif.version, '2.1.0');
   const junit = await readFile(join(output, 'junit.xml'), 'utf8');
   assert.match(junit, /failures="1"/);
+  assert.match(junit, /Cross-tenant request succeeded/);
 });
