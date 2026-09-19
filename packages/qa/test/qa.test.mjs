@@ -9,6 +9,7 @@ import {
   createPlaywrightCaptureConfig,
   createQaPlan,
   discoverQaProject,
+  resolveQaSpawnCommand,
   summarizePlaywrightJson,
 } from '../src/index.ts';
 
@@ -25,6 +26,40 @@ test('discovers an existing Playwright project without installing anything', asy
   assert.equal(discovery.playwrightConfig, join(root, 'playwright.config.ts'));
   assert.equal(discovery.script, 'test:e2e');
   assert.equal(discovery.installsDependencies, false);
+});
+
+test('prefers a product-owned qa:e2e wrapper that controls disposable setup and teardown', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'artisys-qa-owned-runner-'));
+  await writeFile(join(root, 'package.json'), JSON.stringify({
+    scripts: { 'qa:e2e': 'node scripts/qa-e2e.mjs' },
+    devDependencies: { '@playwright/test': '^1.58.2' },
+  }), 'utf8');
+  await writeFile(join(root, 'playwright.config.mjs'), 'export default {};', 'utf8');
+
+  const discovery = await discoverQaProject(root);
+  assert.equal(discovery.mode, 'script');
+  assert.equal(discovery.script, 'qa:e2e');
+
+  const plan = await createQaPlan(root, join(root, '.artisys', 'qa'));
+  assert.equal(plan.mode, 'script');
+  assert.deepEqual(plan.command.args, ['run', 'qa:e2e']);
+  assert.equal(plan.command.shell, false);
+});
+
+test('Windows QA runner invokes .cmd through ComSpec while preserving shell=false', () => {
+  const resolved = resolveQaSpawnCommand(
+    { command: 'npm.cmd', args: ['run', 'qa:e2e'] },
+    { platform: 'win32', comspec: 'C:\\Windows\\System32\\cmd.exe' },
+  );
+  assert.equal(resolved.command, 'C:\\Windows\\System32\\cmd.exe');
+  assert.deepEqual(resolved.args, ['/d', '/s', '/c', 'npm.cmd', 'run', 'qa:e2e']);
+  assert.equal(resolved.shell, false);
+
+  const posix = resolveQaSpawnCommand(
+    { command: 'npm', args: ['run', 'qa:e2e'] },
+    { platform: 'linux' },
+  );
+  assert.deepEqual(posix, { command: 'npm', args: ['run', 'qa:e2e'], shell: false });
 });
 
 test('generated Playwright overlay forces failure evidence without replacing target config', () => {

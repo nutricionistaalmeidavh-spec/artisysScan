@@ -12,7 +12,8 @@ const CONFIG_NAMES = [
   'playwright.config.cjs',
 ];
 
-const SCRIPT_PRIORITY = ['artisys:qa', 'qa:full', 'qa', 'test:e2e', 'e2e'];
+const OWNED_WRAPPER_PRIORITY = ['artisys:qa', 'qa:full', 'qa', 'qa:e2e'];
+const SCRIPT_PRIORITY = [...OWNED_WRAPPER_PRIORITY, 'test:e2e', 'e2e'];
 
 async function exists(path: string): Promise<boolean> {
   try {
@@ -46,6 +47,7 @@ export async function discoverQaProject(root: string): Promise<QaDiscovery> {
   }
 
   const scripts = packageJson?.scripts && typeof packageJson.scripts === 'object' ? packageJson.scripts : {};
+  const ownedWrapper = OWNED_WRAPPER_PRIORITY.find((name) => typeof scripts[name] === 'string');
   const script = SCRIPT_PRIORITY.find((name) => typeof scripts[name] === 'string');
   const deps = {
     ...(packageJson?.dependencies ?? {}),
@@ -53,6 +55,16 @@ export async function discoverQaProject(root: string): Promise<QaDiscovery> {
   };
   const hasPlaywrightDependency = typeof deps['@playwright/test'] === 'string' || typeof deps.playwright === 'string';
   const localPlaywright = join(target, 'node_modules', '.bin', process.platform === 'win32' ? 'playwright.cmd' : 'playwright');
+
+  if (ownedWrapper) {
+    return {
+      mode: 'script',
+      root: target,
+      packageJson: packageJsonPath,
+      script: ownedWrapper,
+      installsDependencies: false,
+    };
+  }
 
   if (playwrightConfig || hasPlaywrightDependency) {
     return {
