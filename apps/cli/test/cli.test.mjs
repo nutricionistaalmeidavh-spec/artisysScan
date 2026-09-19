@@ -128,6 +128,22 @@ test('production environment refuses active or state-changing overrides', () => 
   assert.doesNotMatch(stateChange.stderr, /ENOENT/);
 });
 
+test('homologate rejects dangerous config in production before loading its policy', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'artisys-cli-homologate-'));
+  const configPath = join(root, 'homologate.json');
+  await writeFile(configPath, JSON.stringify({
+    baseUrl: 'http://127.0.0.1:4173',
+    accessPolicy: 'missing-access.yml',
+    allowStateChange: true,
+  }), 'utf8');
+
+  const result = runCli(['homologate', configPath, '--environment=production']);
+
+  assert.equal(result.status, 2);
+  assert.match(result.stderr, /Production environment blocks --allow-state-change/);
+  assert.doesNotMatch(result.stderr, /ENOENT|missing-access/);
+});
+
 test('unknown command exits non-zero and prints usage', () => {
   const result = runCli(['nope']);
 
