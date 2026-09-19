@@ -35,9 +35,18 @@ All steps use `powershell.exe`, matching the already homologated PDV pipeline. N
 
 ## Activation state — 2026-09-18
 
-The repository is enabled on `ci.artisys.dev` and the GitHub webhook/status integration is confirmed: commits receive the context `ci/woodpecker/push/quick` with a Woodpecker pipeline URL.
+The repository is enabled on `ci.artisys.dev`, the GitHub webhook/status integration is confirmed, and the automatic `quick` workflow has completed successfully on the Windows local agent.
 
-At the time of the repository-side migration, the first ArtiSys Scan pipelines remained `pending`. A contemporaneous `utilidades` pipeline was also `pending`, while prior PDV pipelines on this agent had completed successfully. That indicates the server/webhook configuration is working and the remaining runtime dependency is the Windows agent becoming available to consume the queue.
+During homologation, Windows-specific incompatibilities were reproduced on GitHub `windows-latest` and corrected:
+
+- the CLI entrypoint now compares normalized filesystem paths using `fileURLToPath(import.meta.url)` instead of a POSIX-only `file://` string comparison;
+- Source Security and Supply Chain tests no longer hardcode POSIX-only absolute paths.
+
+After the fixes, the same HEAD passed:
+
+- GitHub Actions `ubuntu-latest`;
+- GitHub Actions `windows-latest`;
+- Woodpecker context `ci/woodpecker/push/quick`.
 
 The existing agent launcher sets `WOODPECKER_MAX_WORKFLOWS=1`, so only one workflow can run at a time.
 
@@ -45,10 +54,10 @@ The existing agent launcher sets `WOODPECKER_MAX_WORKFLOWS=1`, so only one workf
 
 1. Keep `nutricionistaalmeidavh-spec/artisysScan` enabled in Woodpecker.
 2. Keep the default pipeline path `.woodpecker/`.
-3. Ensure the Windows agent is connected and advertises `platform=windows/amd64`, `backend=local`, `pilot=pdv-artisys`.
+3. Keep a Windows agent connected with `platform=windows/amd64`, `backend=local`, `pilot=pdv-artisys`.
 4. Do not add pull request execution on the local backend for this public repository.
-5. Confirm the queued `quick` changes from `pending` to `running/success` when the agent is online.
-6. Start `full`, `fleet`, and `release-windows` manually after `quick` is green.
+5. Use `quick` for trusted pushes.
+6. Use `full`, `fleet`, and `release-windows` manually when those heavier profiles are needed.
 
 ## Optional local syntax verification
 
@@ -58,4 +67,4 @@ With Woodpecker CLI installed:
 woodpecker-cli exec --backend-engine local .woodpecker/quick.yml
 ```
 
-The repository/server enablement is confirmed through GitHub's Woodpecker commit status. A green agent execution is tracked separately from enablement.
+Repository enablement, webhook delivery and a real green agent execution have all been verified.
