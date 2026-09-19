@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import test from 'node:test';
 
 import {
@@ -9,12 +9,14 @@ import {
 } from '../src/index.ts';
 
 test('supply chain plan generates CycloneDX and scans vulnerabilities/licenses with open-source tools', () => {
-  const plan = createSupplyChainPlan('/tmp/product', '/tmp/report');
+  const root = resolve('/tmp/product');
+  const reportDir = resolve('/tmp/report');
+  const plan = createSupplyChainPlan(root, reportDir);
 
   assert.equal(plan.length, 3);
   assert.equal(plan[0].tool, 'trivy');
   assert.ok(plan[0].args.includes('cyclonedx'));
-  assert.ok(plan[0].args.includes(join('/tmp/report', 'sbom.cdx.json')));
+  assert.ok(plan[0].args.includes(join(reportDir, 'sbom.cdx.json')));
 
   assert.equal(plan[1].tool, 'trivy');
   assert.ok(plan[1].args.includes('vuln,license'));
