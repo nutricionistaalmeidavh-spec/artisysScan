@@ -1,10 +1,13 @@
 import assert from 'node:assert/strict';
+import { mkdtemp, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import test from 'node:test';
 
 import {
   createSupplyChainPlan,
   normalizeTrivySupplyChain,
+  runSupplyChain,
   summarizeCycloneDx,
 } from '../src/index.ts';
 
@@ -31,6 +34,38 @@ test('supply chain plan generates CycloneDX and scans vulnerabilities/licenses w
   assert.ok(!plan[2].args.includes(root), 'OSV target must not repeat the absolute cwd path');
 
   for (const command of plan) assert.equal(command.shell, false);
+});
+
+test('OSV no package sources is not a supply-chain failure', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'artisys-supply-root-'));
+  const outputDir = await mkdtemp(join(tmpdir(), 'artisys-supply-report-'));
+  const report = await runSupplyChain(root, {
+    outputDir,
+    runner: async (command) => {
+      if (command.step === 'sbom') {
+        await writeFile(command.outputFile, JSON.stringify({
+          bomFormat: 'CycloneDX',
+          specVersion: '1.6',
+          components: [],
+          dependencies: [],
+        }));
+        return { exitCode: 0, stdout: '', stderr: '' };
+      }
+      if (command.step === 'audit') {
+        return { exitCode: 0, stdout: '{"Results":[]}', stderr: '' };
+      }
+      return {
+        exitCode: 128,
+        stdout: '',
+        stderr: 'No package sources found, --help for usage information.',
+      };
+    },
+  });
+
+  const osv = report.steps.find((item) => item.step === 'osv');
+  assert.equal(report.complete, true);
+  assert.equal(osv?.status, 'skipped');
+  assert.match(osv?.diagnostic ?? '', /No package sources found/i);
 });
 
 test('normalizes dependency vulnerabilities and license findings from Trivy JSON', () => {
