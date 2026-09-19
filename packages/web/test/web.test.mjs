@@ -23,6 +23,24 @@ test('web scanner flags missing browser protections, insecure cookies and leakag
   assert.ok(ids.includes('ARTISYS-WEB-LEAK-001'));
 });
 
+test('loopback disposable HTTP is not treated as insecure transport', () => {
+  const findings = assessWebResponse('http://127.0.0.1:4173/commercial/', {
+    status: 200,
+    headers: { 'content-type': 'text/html' },
+    body: '<html>local staging</html>',
+  });
+  assert.equal(findings.some((finding) => finding.ruleId === 'ARTISYS-WEB-HTTPS-001'), false);
+});
+
+test('non-loopback HTTP remains a high-severity finding', () => {
+  const findings = assessWebResponse('http://app.example.test', {
+    status: 200,
+    headers: { 'content-type': 'text/html' },
+    body: '<html>remote</html>',
+  });
+  assert.equal(findings.some((finding) => finding.ruleId === 'ARTISYS-WEB-HTTPS-001'), true);
+});
+
 test('web scanner identifies CSRF-review forms and upload surfaces', () => {
   const findings = assessWebResponse('https://app.example.test', {
     status: 200,
