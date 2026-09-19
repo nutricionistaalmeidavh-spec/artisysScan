@@ -58,6 +58,10 @@ export function analyzeElectronText(path: string, source: string): DesktopFindin
   return findings;
 }
 
+function isNonProductionArtifactScope(path: string): boolean {
+  return /(?:^|\/)(?:qa|test|tests|e2e|fixtures?|mocks?|__tests__|samples?)(?:\/|$)/i.test(path);
+}
+
 export function analyzeDesktopArtifacts(paths: string[]): DesktopFinding[] {
   const findings: DesktopFinding[] = [];
   for (const path of paths) {
@@ -65,7 +69,9 @@ export function analyzeDesktopArtifacts(paths: string[]): DesktopFinding[] {
     if (/\.(sqlite|sqlite3|db)$/i.test(normalized) && !/(fixture|sample|test|mock)/i.test(normalized)) {
       findings.push(finding('ARTISYS-DESKTOP-DATA-001', 'high', 'Tracked SQLite/database artifact may contain customer or production data.', path));
     }
-    if (/(token|session|auth|credential)[^/]*\.(log|json|txt)$/i.test(normalized) || /logs?\/[^/]*(token|session|auth|credential)/i.test(normalized)) {
+    const authenticationArtifactName = /(token|session|auth|credential)[^/]*\.(log|json|txt)$/i.test(normalized)
+      || /logs?\/[^/]*(token|session|auth|credential)/i.test(normalized);
+    if (authenticationArtifactName && !isNonProductionArtifactScope(normalized)) {
       findings.push(finding('ARTISYS-DESKTOP-TOKEN-001', 'high', 'Tracked artifact name suggests authentication material may be persisted in logs or files.', path));
     }
   }
