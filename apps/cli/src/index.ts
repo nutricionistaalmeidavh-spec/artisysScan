@@ -22,7 +22,7 @@ import { inspectUpdaterArtifacts } from '../../../packages/updater/src/index.js'
 import { runWebDast } from '../../../packages/web/src/dast.js';
 import { runWebScan } from '../../../packages/web/src/index.js';
 
-const USAGE = `Usage:\n  artisys-scan validate <manifest>\n  artisys-scan discover <root>\n  artisys-scan security <root>\n  artisys-scan supply-chain <root> [output-dir]\n  artisys-scan qa <root> [output-dir] --allow-project-exec\n  artisys-scan web <url> [output-dir] [--dast] [--allow-active]\n  artisys-scan api <access.yml> [--allow-state-change]\n  artisys-scan rbac <access.yml> [--allow-state-change]\n  artisys-scan tenant <access.yml> [--allow-state-change]\n  artisys-scan admin <access.yml> [--allow-state-change]\n  artisys-scan desktop <root>\n  artisys-scan installer <workflow.json> --allow-project-exec\n  artisys-scan update-artifacts <latest.yml> [artifact-dir]\n  artisys-scan report <input.json> [output-dir]\n  artisys-scan gate <report.json> [policy.json]\n  artisys-scan fleet <fleet.yml> [output.json] [--concurrency=N]\n  artisys-scan dashboard <fleet-report.json> [output-dir]\n`;
+const USAGE = `Usage:\n  artisys-scan validate <manifest>\n  artisys-scan discover <root>\n  artisys-scan security <root>\n  artisys-scan supply-chain <root> [output-dir]\n  artisys-scan qa <root> [output-dir] --allow-project-exec\n  artisys-scan web <url> [output-dir] [--dast] [--allow-active]\n  artisys-scan api <access.yml> [--allow-state-change]\n  artisys-scan rbac <access.yml> [--allow-state-change]\n  artisys-scan tenant <access.yml> [--allow-state-change]\n  artisys-scan admin <access.yml> [--allow-state-change]\n  artisys-scan desktop <root>\n  artisys-scan installer <workflow.json> --allow-project-exec\n  artisys-scan update-artifacts <latest.yml> [artifact-dir]\n  artisys-scan report <input.json> [output-dir]\n  artisys-scan gate <report.json> [policy.json]\n  artisys-scan fleet <fleet.yml> [output.json] [--concurrency=N]\n  artisys-scan dashboard <fleet-report.json> [output-dir]\n\nGlobal safety flags:\n  --safe\n  --environment=development|staging|production\n`;
 
 function reportExitCode(report: { complete: boolean; passed: boolean }): number {
   if (!report.complete) return 2;
@@ -34,6 +34,41 @@ function checkStatus(complete: boolean, findings: ReportFinding[]): ReportCheck[
   if (findings.some((item) => item.severity === 'critical' || item.severity === 'high')) return 'failed';
   if (findings.length > 0) return 'warn';
   return 'passed';
+}
+
+function executionGuard(command: string, rest: string[]): string | undefined {
+  const safe = rest.includes('--safe');
+  const environmentArg = rest.find((value) => value.startsWith('--environment='));
+  const environment = environmentArg?.slice('--environment='.length);
+
+  if (environment && !['development', 'staging', 'production'].includes(environment)) {
+    return `Invalid environment: ${environment}. Use development, staging or production.`;
+  }
+
+  const dangerousFlags = ['--allow-project-exec', '--allow-state-change', '--allow-active'];
+  const requestedDangerousFlag = dangerousFlags.find((flag) => rest.includes(flag));
+
+  if (safe && requestedDangerousFlag) {
+    return `Safe mode blocks ${requestedDangerousFlag}.`;
+  }
+
+  if (safe && rest.includes('--dast')) {
+    return 'Safe mode blocks --dast.';
+  }
+
+  if (safe && ['qa', 'installer'].includes(command)) {
+    return `Safe mode blocks ${command} because it can execute the target project.`;
+  }
+
+  if (environment === 'production' && requestedDangerousFlag) {
+    return `Production environment blocks ${requestedDangerousFlag}.`;
+  }
+
+  if (environment === 'production' && rest.includes('--dast')) {
+    return 'Production environment blocks --dast.';
+  }
+
+  return undefined;
 }
 
 async function scanFleetProduct(product: FleetProduct, configDir: string): Promise<UnifiedReportInput> {
@@ -101,6 +136,12 @@ export async function main(args: string[] = process.argv.slice(2)): Promise<numb
   if (!command || !target) {
     process.stderr.write(USAGE);
     return 1;
+  }
+
+  const guardMessage = executionGuard(command, rest);
+  if (guardMessage) {
+    process.stderr.write(`${guardMessage}\n`);
+    return 2;
   }
 
   try {
@@ -249,7 +290,7 @@ export async function main(args: string[] = process.argv.slice(2)): Promise<numb
     if (command === 'dashboard') {
       const report = JSON.parse(await readFile(resolve(target), 'utf8')) as FleetReport;
       const requestedDir = rest.find((value) => !value.startsWith('--'));
-      const outputDir = resolve(requestedDir ?? '.artisys/dashboard');
+      const outputDir = resolve(requestedOutput ?? '.artisys/dashboard');
       const bundle = await writeFleetDashboard(report, outputDir);
       process.stdout.write(`${JSON.stringify(bundle, null, 2)}\n`);
       return 0;
