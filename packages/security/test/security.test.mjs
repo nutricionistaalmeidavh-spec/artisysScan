@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { resolve } from 'node:path';
 import test from 'node:test';
 
 import {
@@ -7,7 +8,8 @@ import {
 } from '../src/index.ts';
 
 test('source security plan uses four open-source scanners without shell execution', () => {
-  const plan = createSourceSecurityPlan('/tmp/product');
+  const root = resolve('/tmp/product');
+  const plan = createSourceSecurityPlan(root);
 
   assert.deepEqual(plan.map((item) => item.tool), [
     'semgrep',
@@ -17,7 +19,7 @@ test('source security plan uses four open-source scanners without shell executio
   ]);
 
   for (const command of plan) {
-    assert.equal(command.cwd, '/tmp/product');
+    assert.equal(command.cwd, root);
     assert.equal(command.shell, false);
   }
 
