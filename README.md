@@ -4,7 +4,7 @@ Orquestrador open source e self-hosted para QA, segurança, descoberta de stack,
 
 ## Estado atual
 
-As Fases **0–18** estão implementadas e validadas no core. As Fases **19–20** estão implementadas no repositório e o projeto já está habilitado no servidor Woodpecker; falta apenas a primeira execução `quick` sair da fila e concluir no agent Windows.
+As Fases **0–20 estão concluídas**. O core foi validado em Linux e Windows, e o `quick` também concluiu com sucesso no Woodpecker Windows local.
 
 O ArtiSys Scan inclui:
 
@@ -105,7 +105,7 @@ pull request ─────> GitHub Actions hosted runner
 manual fallback ──> GitHub Actions
 ```
 
-O agent Windows atualmente homologado é selecionado por:
+O agent Windows homologado é selecionado por:
 
 ```text
 platform=windows/amd64
@@ -122,7 +122,7 @@ Workflows Woodpecker:
 
 O backend Woodpecker `local` executa comandos diretamente no host. Como este repositório é público, **nenhum workflow Woodpecker aceita `pull_request`**. PRs permanecem no GitHub Actions hospedado e isolado.
 
-O repositório já está habilitado em `ci.artisys.dev`: o GitHub recebe o status `ci/woodpecker/push/quick`. No primeiro teste operacional, tanto ArtiSys Scan quanto `utilidades` permaneceram `pending`; portanto o servidor/webhook estão funcionando e a pendência atual é a disponibilidade do agent Windows. O launcher existente limita o agent a um workflow simultâneo.
+A migração foi validada operacionalmente: o contexto `ci/woodpecker/push/quick` concluiu `success` no Woodpecker, e o mesmo HEAD passou no GitHub Actions em `ubuntu-latest` e `windows-latest`. Durante essa homologação foram corrigidas diferenças de paths Windows e a detecção do entrypoint ESM do CLI.
 
 ## Segurança de execução
 
