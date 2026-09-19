@@ -38,6 +38,7 @@ test('source security plan uses four open-source scanners without shell executio
 
   const osv = plan[3];
   assert.deepEqual(osv.args.slice(0, 3), ['scan', 'source', '--format=json']);
+  assert.ok(osv.args.includes('--recursive'), 'OSV-Scanner v2 requires recursive mode for directory scans');
 });
 
 test('normalizes Semgrep, Trivy, Gitleaks and OSV into one finding contract', () => {
