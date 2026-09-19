@@ -25,6 +25,7 @@ test('supply chain plan generates CycloneDX and scans vulnerabilities/licenses w
 
   assert.equal(plan[2].tool, 'osv-scanner');
   assert.deepEqual(plan[2].args.slice(0, 3), ['scan', 'source', '--format=json']);
+  assert.ok(plan[2].args.includes('--recursive'), 'OSV-Scanner v2 requires recursive mode for directory scans');
 
   for (const command of plan) assert.equal(command.shell, false);
 });
