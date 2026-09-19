@@ -11,6 +11,8 @@ export type {
   SupplyChainReport,
   SupplyChainRunner,
   SupplyChainStep,
+  SupplyChainStepReport,
+  SupplyChainStepStatus,
   SupplyChainTool,
   TrivySupplyChainFindings,
 } from './types.js';
