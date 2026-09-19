@@ -29,7 +29,7 @@ export function createSupplyChainPlan(root: string, outputDir: string): SupplyCh
       step: 'osv',
       tool: 'osv-scanner',
       command: 'osv-scanner',
-      args: ['scan', 'source', '--format=json', '--recursive', cwd],
+      args: ['scan', 'source', '--format=json', '--recursive', '.'],
       cwd,
       shell: false,
     },
