@@ -11,6 +11,7 @@ import { writeFleetDashboard, type FleetReport } from '../../../packages/dashboa
 import { runDesktopScan } from '../../../packages/desktop/src/index.js';
 import { loadFleetConfig, runFleet, type FleetProduct } from '../../../packages/fleet/src/index.js';
 import { runInstallerWorkflow, type InstallerWorkflowConfig } from '../../../packages/installer/src/index.js';
+import { runHomologation } from '../../../packages/orchestrator/src/index.js';
 import { runQa } from '../../../packages/qa/src/index.js';
 import { runRbacScan } from '../../../packages/rbac/src/index.js';
 import { evaluateReleaseGate, releaseGateExitCode, type ReleaseGatePolicy } from '../../../packages/release-gate/src/index.js';
@@ -22,7 +23,17 @@ import { inspectUpdaterArtifacts } from '../../../packages/updater/src/index.js'
 import { runWebDast } from '../../../packages/web/src/dast.js';
 import { runWebScan } from '../../../packages/web/src/index.js';
 
-const USAGE = `Usage:\n  artisys-scan validate <manifest>\n  artisys-scan discover <root>\n  artisys-scan security <root>\n  artisys-scan supply-chain <root> [output-dir]\n  artisys-scan qa <root> [output-dir] --allow-project-exec\n  artisys-scan web <url> [output-dir] [--dast] [--allow-active]\n  artisys-scan api <access.yml> [--allow-state-change]\n  artisys-scan rbac <access.yml> [--allow-state-change]\n  artisys-scan tenant <access.yml> [--allow-state-change]\n  artisys-scan admin <access.yml> [--allow-state-change]\n  artisys-scan desktop <root>\n  artisys-scan installer <workflow.json> --allow-project-exec\n  artisys-scan update-artifacts <latest.yml> [artifact-dir]\n  artisys-scan report <input.json> [output-dir]\n  artisys-scan gate <report.json> [policy.json]\n  artisys-scan fleet <fleet.yml> [output.json] [--concurrency=N]\n  artisys-scan dashboard <fleet-report.json> [output-dir]\n\nGlobal safety flags:\n  --safe\n  --environment=development|staging|production\n`;
+const USAGE = `Usage:\n  artisys-scan validate <manifest>\n  artisys-scan discover <root>\n  artisys-scan security <root>\n  artisys-scan supply-chain <root> [output-dir]\n  artisys-scan qa <root> [output-dir] --allow-project-exec\n  artisys-scan web <url> [output-dir] [--dast] [--allow-active]\n  artisys-scan api <access.yml> [--allow-state-change]\n  artisys-scan rbac <access.yml> [--allow-state-change]\n  artisys-scan tenant <access.yml> [--allow-state-change]\n  artisys-scan admin <access.yml> [--allow-state-change]\n  artisys-scan homologate <config.json>\n  artisys-scan desktop <root>\n  artisys-scan installer <workflow.json> --allow-project-exec\n  artisys-scan update-artifacts <latest.yml> [artifact-dir]\n  artisys-scan report <input.json> [output-dir]\n  artisys-scan gate <report.json> [policy.json]\n  artisys-scan fleet <fleet.yml> [output.json] [--concurrency=N]\n  artisys-scan dashboard <fleet-report.json> [output-dir]\n\nGlobal safety flags:\n  --safe\n  --environment=development|staging|production\n`;
+
+interface HomologationFileConfig {
+  baseUrl: string;
+  accessPolicy: string;
+  projectRoot?: string;
+  outputDir?: string;
+  allowActive?: boolean;
+  allowStateChange?: boolean;
+  allowProjectExecution?: boolean;
+}
 
 function reportExitCode(report: { complete: boolean; passed: boolean }): number {
   if (!report.complete) return 2;
@@ -69,6 +80,40 @@ function executionGuard(command: string, rest: string[]): string | undefined {
   }
 
   return undefined;
+}
+
+function parseHomologationConfig(value: unknown): HomologationFileConfig {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Homologation config must be an object.');
+  const input = value as Record<string, unknown>;
+  if (typeof input.baseUrl !== 'string' || input.baseUrl.length === 0) throw new Error('Homologation config requires baseUrl.');
+  if (typeof input.accessPolicy !== 'string' || input.accessPolicy.length === 0) throw new Error('Homologation config requires accessPolicy.');
+  const booleanKeys = ['allowActive', 'allowStateChange', 'allowProjectExecution'] as const;
+  for (const key of booleanKeys) {
+    if (input[key] !== undefined && typeof input[key] !== 'boolean') throw new Error(`Homologation config ${key} must be boolean.`);
+  }
+  for (const key of ['projectRoot', 'outputDir'] as const) {
+    if (input[key] !== undefined && (typeof input[key] !== 'string' || input[key].length === 0)) {
+      throw new Error(`Homologation config ${key} must be a non-empty string.`);
+    }
+  }
+  return {
+    baseUrl: input.baseUrl,
+    accessPolicy: input.accessPolicy,
+    ...(typeof input.projectRoot === 'string' ? { projectRoot: input.projectRoot } : {}),
+    ...(typeof input.outputDir === 'string' ? { outputDir: input.outputDir } : {}),
+    ...(typeof input.allowActive === 'boolean' ? { allowActive: input.allowActive } : {}),
+    ...(typeof input.allowStateChange === 'boolean' ? { allowStateChange: input.allowStateChange } : {}),
+    ...(typeof input.allowProjectExecution === 'boolean' ? { allowProjectExecution: input.allowProjectExecution } : {}),
+  };
+}
+
+function homologationGuardArgs(config: HomologationFileConfig, rest: string[]): string[] {
+  return [
+    ...rest,
+    ...(config.allowActive ? ['--allow-active'] : []),
+    ...(config.allowStateChange ? ['--allow-state-change'] : []),
+    ...(config.allowProjectExecution ? ['--allow-project-exec'] : []),
+  ];
 }
 
 async function scanFleetProduct(product: FleetProduct, configDir: string): Promise<UnifiedReportInput> {
@@ -216,6 +261,31 @@ export async function main(args: string[] = process.argv.slice(2)): Promise<numb
           : command === 'tenant'
             ? await runTenantScan(policy, { allowStateChange })
             : await runAdminScan(policy, { allowStateChange });
+      process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
+      return reportExitCode(report);
+    }
+
+    if (command === 'homologate') {
+      const configPath = resolve(target);
+      const configDir = dirname(configPath);
+      const config = parseHomologationConfig(JSON.parse(await readFile(configPath, 'utf8')) as unknown);
+      const configGuard = executionGuard(command, homologationGuardArgs(config, rest));
+      if (configGuard) {
+        process.stderr.write(`${configGuard}\n`);
+        return 2;
+      }
+      const policyPath = isAbsolute(config.accessPolicy) ? config.accessPolicy : resolve(configDir, config.accessPolicy);
+      const policy = await loadAccessPolicy(policyPath);
+      if (policy.baseUrl !== config.baseUrl) throw new Error('Homologation baseUrl must match the access policy baseUrl.');
+      const report = await runHomologation({
+        baseUrl: config.baseUrl,
+        policy,
+        ...(config.projectRoot ? { projectRoot: isAbsolute(config.projectRoot) ? config.projectRoot : resolve(configDir, config.projectRoot) } : {}),
+        ...(config.outputDir ? { outputDir: isAbsolute(config.outputDir) ? config.outputDir : resolve(configDir, config.outputDir) } : {}),
+        allowActive: config.allowActive ?? false,
+        allowStateChange: config.allowStateChange ?? false,
+        allowProjectExecution: config.allowProjectExecution ?? false,
+      });
       process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
       return reportExitCode(report);
     }
