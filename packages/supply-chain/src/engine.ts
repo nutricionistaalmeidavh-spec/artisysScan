@@ -15,6 +15,12 @@ export interface RunSupplyChainOptions {
   runner?: SupplyChainRunner;
 }
 
+function isNoPackageSources(step: string, exitCode: number | null, stderr: string): boolean {
+  return step === 'osv'
+    && exitCode !== 0
+    && /No package sources found/i.test(stderr);
+}
+
 export async function runSupplyChain(
   root: string,
   options: RunSupplyChainOptions = {},
@@ -55,9 +61,21 @@ export async function runSupplyChain(
       continue;
     }
 
+    const stderr = result.stderr.trim();
+    if (isNoPackageSources(command.step, result.exitCode, stderr)) {
+      report.steps.push({
+        step: command.step,
+        tool: command.tool,
+        status: 'skipped',
+        exitCode: result.exitCode,
+        diagnostic: stderr,
+      });
+      continue;
+    }
+
     if (command.step === 'sbom') {
       if (result.exitCode !== 0 || !command.outputFile) {
-        fail(result.stderr.trim() || 'Trivy failed to generate CycloneDX SBOM');
+        fail(stderr || 'Trivy failed to generate CycloneDX SBOM');
         continue;
       }
       try {
@@ -73,7 +91,7 @@ export async function runSupplyChain(
 
     if (!result.stdout.trim()) {
       if (result.exitCode !== 0) {
-        fail(result.stderr.trim() || `${command.tool} returned no machine-readable output`);
+        fail(stderr || `${command.tool} returned no machine-readable output`);
       } else {
         report.steps.push({ step: command.step, tool: command.tool, status: 'ok', exitCode: result.exitCode });
       }
@@ -93,7 +111,7 @@ export async function runSupplyChain(
           tool: command.tool,
           status: normalized.vulnerabilities.length + normalized.licenses.length > 0 ? 'findings' : 'ok',
           exitCode: result.exitCode,
-          ...(result.stderr.trim() ? { diagnostic: result.stderr.trim() } : {}),
+          ...(stderr ? { diagnostic: stderr } : {}),
         });
       } else {
         const artifact = join(outputDir, 'osv-supply-chain.json');
@@ -106,7 +124,7 @@ export async function runSupplyChain(
           tool: command.tool,
           status: osvFindings.length > 0 ? 'findings' : 'ok',
           exitCode: result.exitCode,
-          ...(result.stderr.trim() ? { diagnostic: result.stderr.trim() } : {}),
+          ...(stderr ? { diagnostic: stderr } : {}),
         });
       }
     } catch (error) {
