@@ -9,7 +9,11 @@ permissions:
 
 jobs:
   quick:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
@@ -24,4 +28,5 @@ jobs:
         run: npm run ci
 
 # Hosted isolation for pull requests + manual fallback only.
+# Windows coverage reproduces the Woodpecker local-agent runtime without using the host directly.
 # Trusted push CI is handled by Woodpecker. This workflow never publishes releases.
