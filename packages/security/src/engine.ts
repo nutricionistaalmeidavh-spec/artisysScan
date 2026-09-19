@@ -28,6 +28,12 @@ function summarize(findings: SecurityFinding[]): Record<FindingSeverity, number>
   return summary;
 }
 
+function isNoPackageSources(commandTool: string, exitCode: number | null, stderr: string): boolean {
+  return commandTool === 'osv-scanner'
+    && exitCode !== 0
+    && /No package sources found/i.test(stderr);
+}
+
 export async function runSourceSecurity(
   root: string,
   options: RunSourceSecurityOptions = {},
@@ -50,6 +56,18 @@ export async function runSourceSecurity(
       continue;
     }
 
+    const stderr = result.stderr.trim();
+    if (isNoPackageSources(command.tool, result.exitCode, stderr)) {
+      tools.push({
+        tool: command.tool,
+        status: 'skipped',
+        exitCode: result.exitCode,
+        findings: [],
+        diagnostic: stderr,
+      });
+      continue;
+    }
+
     try {
       const findings = normalizeSecurityOutput(command.tool, result.stdout);
       const status = findings.length > 0 ? 'findings' : result.exitCode === 0 ? 'ok' : 'error';
@@ -58,7 +76,7 @@ export async function runSourceSecurity(
         status,
         exitCode: result.exitCode,
         findings,
-        ...(status === 'error' && result.stderr.trim() ? { diagnostic: result.stderr.trim() } : {}),
+        ...(status === 'error' && stderr ? { diagnostic: stderr } : {}),
       });
     } catch (error) {
       tools.push({
