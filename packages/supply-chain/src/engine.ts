@@ -33,37 +33,49 @@ export async function runSupplyChain(
     osvFindings: [],
     artifacts: [],
     diagnostics: [],
+    steps: [],
   };
 
   for (const command of createSupplyChainPlan(target, outputDir)) {
     const result = await runner(command);
-    if (result.errorCode === 'ENOENT') {
+    const fail = (diagnostic: string, status: 'unavailable' | 'error' = 'error'): void => {
       report.complete = false;
-      report.diagnostics.push(`${command.command} is not installed or not available in PATH`);
+      report.diagnostics.push(`${command.step}/${command.tool}: ${diagnostic}`);
+      report.steps.push({
+        step: command.step,
+        tool: command.tool,
+        status,
+        exitCode: result.exitCode,
+        diagnostic,
+      });
+    };
+
+    if (result.errorCode === 'ENOENT') {
+      fail(`${command.command} is not installed or not available in PATH`, 'unavailable');
       continue;
     }
 
     if (command.step === 'sbom') {
       if (result.exitCode !== 0 || !command.outputFile) {
-        report.complete = false;
-        report.diagnostics.push(result.stderr.trim() || 'Trivy failed to generate CycloneDX SBOM');
+        fail(result.stderr.trim() || 'Trivy failed to generate CycloneDX SBOM');
         continue;
       }
       try {
         const raw = await readFile(command.outputFile, 'utf8');
         report.sbom = summarizeCycloneDx(raw);
         report.artifacts.push(command.outputFile);
+        report.steps.push({ step: command.step, tool: command.tool, status: 'ok', exitCode: result.exitCode });
       } catch (error) {
-        report.complete = false;
-        report.diagnostics.push(error instanceof Error ? error.message : String(error));
+        fail(error instanceof Error ? error.message : String(error));
       }
       continue;
     }
 
     if (!result.stdout.trim()) {
       if (result.exitCode !== 0) {
-        report.complete = false;
-        report.diagnostics.push(result.stderr.trim() || `${command.tool} returned no machine-readable output`);
+        fail(result.stderr.trim() || `${command.tool} returned no machine-readable output`);
+      } else {
+        report.steps.push({ step: command.step, tool: command.tool, status: 'ok', exitCode: result.exitCode });
       }
       continue;
     }
@@ -76,15 +88,29 @@ export async function runSupplyChain(
         report.vulnerabilities.push(...normalized.vulnerabilities);
         report.licenses.push(...normalized.licenses);
         report.artifacts.push(artifact);
+        report.steps.push({
+          step: command.step,
+          tool: command.tool,
+          status: normalized.vulnerabilities.length + normalized.licenses.length > 0 ? 'findings' : 'ok',
+          exitCode: result.exitCode,
+          ...(result.stderr.trim() ? { diagnostic: result.stderr.trim() } : {}),
+        });
       } else {
         const artifact = join(outputDir, 'osv-supply-chain.json');
         await writeFile(artifact, result.stdout, 'utf8');
-        report.osvFindings.push(...normalizeSecurityOutput('osv-scanner', result.stdout));
+        const osvFindings = normalizeSecurityOutput('osv-scanner', result.stdout);
+        report.osvFindings.push(...osvFindings);
         report.artifacts.push(artifact);
+        report.steps.push({
+          step: command.step,
+          tool: command.tool,
+          status: osvFindings.length > 0 ? 'findings' : 'ok',
+          exitCode: result.exitCode,
+          ...(result.stderr.trim() ? { diagnostic: result.stderr.trim() } : {}),
+        });
       }
     } catch (error) {
-      report.complete = false;
-      report.diagnostics.push(error instanceof Error ? error.message : String(error));
+      fail(error instanceof Error ? error.message : String(error));
     }
   }
 
