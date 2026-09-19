@@ -16,6 +16,9 @@ export interface ReportCheck {
   name: string;
   status: 'passed' | 'failed' | 'warn' | 'skipped' | 'incomplete';
   durationMs?: number;
+  tool?: string;
+  exitCode?: number | null;
+  diagnostic?: string;
 }
 
 export interface UnifiedReportInput {
@@ -56,7 +59,14 @@ export function renderTerminal(input: UnifiedReportInput): string {
     `Profile: ${input.profile}`,
     `Status: ${status}`,
     `critical ${counts.critical} | high ${counts.high} | medium ${counts.medium} | low ${counts.low} | info ${counts.info} | unknown ${counts.unknown}`,
+    'Checks:',
   ];
+  for (const check of input.checks) {
+    const tool = check.tool ? ` tool=${check.tool}` : '';
+    const exitCode = check.exitCode !== undefined ? ` exit=${check.exitCode ?? 'null'}` : '';
+    const diagnostic = check.diagnostic ? ` diagnostic=${check.diagnostic}` : '';
+    lines.push(`[${check.status.toUpperCase()}] ${check.id}${tool}${exitCode}${diagnostic}`);
+  }
   for (const item of input.findings.slice(0, 50)) lines.push(`[${item.severity.toUpperCase()}] ${item.ruleId} ${item.message}${item.path ? ` (${item.path})` : ''}`);
   return `${lines.join('\n')}\n`;
 }
@@ -84,11 +94,12 @@ function toJunit(input: UnifiedReportInput): string {
   const skipped = input.checks.filter((check) => check.status === 'skipped' || check.status === 'incomplete').length;
   const cases = input.checks.map((check) => {
     const seconds = ((check.durationMs ?? 0) / 1000).toFixed(3);
+    const detail = check.diagnostic ? escapeXml(check.diagnostic) : '';
     const body = check.status === 'failed'
-      ? `<failure message="${escapeXml(`${check.name} failed`)}"/>`
+      ? `<failure message="${escapeXml(`${check.name} failed`)}">${detail}</failure>`
       : check.status === 'skipped' || check.status === 'incomplete'
-        ? '<skipped/>'
-        : '';
+        ? `<skipped/>${detail ? `<system-out>${detail}</system-out>` : ''}`
+        : detail ? `<system-out>${detail}</system-out>` : '';
     return `<testcase classname="artisys.scan" name="${escapeXml(check.name)}" time="${seconds}">${body}</testcase>`;
   }).join('');
   return `<?xml version="1.0" encoding="UTF-8"?><testsuite name="ArtiSys Scan" tests="${input.checks.length}" failures="${failures}" skipped="${skipped}">${cases}</testsuite>`;
@@ -97,8 +108,8 @@ function toJunit(input: UnifiedReportInput): string {
 function toHtml(input: UnifiedReportInput): string {
   const counts = severityCounts(input.findings);
   const findingRows = input.findings.map((item) => `<tr><td>${escapeHtml(item.severity)}</td><td>${escapeHtml(item.ruleId)}</td><td>${escapeHtml(item.tool)}</td><td>${escapeHtml(item.message)}</td><td>${escapeHtml(item.path ?? '')}</td></tr>`).join('');
-  const checkRows = input.checks.map((check) => `<tr><td>${escapeHtml(check.name)}</td><td>${escapeHtml(check.status)}</td><td>${check.durationMs ?? 0}</td></tr>`).join('');
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ArtiSys Scan — ${escapeHtml(input.productId)}</title><style>body{font-family:system-ui,sans-serif;max-width:1200px;margin:32px auto;padding:0 16px}table{border-collapse:collapse;width:100%;margin:16px 0}th,td{border:1px solid #ddd;padding:8px;text-align:left}code{white-space:pre-wrap}</style></head><body><h1>ArtiSys Scan — ${escapeHtml(input.productId)}</h1><p>Profile: ${escapeHtml(input.profile)} | Passed: ${input.passed} | Complete: ${input.complete}</p><p>Critical ${counts.critical} · High ${counts.high} · Medium ${counts.medium} · Low ${counts.low} · Info ${counts.info}</p><h2>Checks</h2><table><thead><tr><th>Check</th><th>Status</th><th>ms</th></tr></thead><tbody>${checkRows}</tbody></table><h2>Findings</h2><table><thead><tr><th>Severity</th><th>Rule</th><th>Tool</th><th>Message</th><th>Path</th></tr></thead><tbody>${findingRows}</tbody></table></body></html>`;
+  const checkRows = input.checks.map((check) => `<tr><td>${escapeHtml(check.id)}</td><td>${escapeHtml(check.name)}</td><td>${escapeHtml(check.status)}</td><td>${escapeHtml(check.tool ?? '')}</td><td>${check.exitCode ?? ''}</td><td>${escapeHtml(check.diagnostic ?? '')}</td><td>${check.durationMs ?? 0}</td></tr>`).join('');
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ArtiSys Scan — ${escapeHtml(input.productId)}</title><style>body{font-family:system-ui,sans-serif;max-width:1200px;margin:32px auto;padding:0 16px}table{border-collapse:collapse;width:100%;margin:16px 0}th,td{border:1px solid #ddd;padding:8px;text-align:left}code{white-space:pre-wrap}</style></head><body><h1>ArtiSys Scan — ${escapeHtml(input.productId)}</h1><p>Profile: ${escapeHtml(input.profile)} | Passed: ${input.passed} | Complete: ${input.complete}</p><p>Critical ${counts.critical} · High ${counts.high} · Medium ${counts.medium} · Low ${counts.low} · Info ${counts.info}</p><h2>Checks</h2><table><thead><tr><th>ID</th><th>Check</th><th>Status</th><th>Tool</th><th>Exit</th><th>Diagnostic</th><th>ms</th></tr></thead><tbody>${checkRows}</tbody></table><h2>Findings</h2><table><thead><tr><th>Severity</th><th>Rule</th><th>Tool</th><th>Message</th><th>Path</th></tr></thead><tbody>${findingRows}</tbody></table></body></html>`;
 }
 
 export async function writeReportBundle(input: UnifiedReportInput, outputDir: string): Promise<ReportBundleResult> {
