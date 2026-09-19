@@ -46,6 +46,15 @@ function cookies(headers: Record<string, string | string[]>): string[] {
   return Array.isArray(value) ? value : [value];
 }
 
+function isLoopbackUrl(value: string): boolean {
+  try {
+    const hostname = new URL(value).hostname.toLowerCase();
+    return hostname === '127.0.0.1' || hostname === 'localhost' || hostname === '[::1]' || hostname === '::1';
+  } catch {
+    return false;
+  }
+}
+
 function inspectHtmlSurfaces(url: string, body: string): WebFinding[] {
   const findings: WebFinding[] = [];
   const stateChangingForms = body.match(/<form\b[^>]*method=["']?(?:post|put|patch|delete)["']?[^>]*>[\s\S]*?<\/form>/gi) ?? [];
@@ -75,7 +84,7 @@ export function assessWebResponse(url: string, response: HttpResponse): WebFindi
     findings.push({ ruleId, severity, message, url, ...(evidence ? { evidence } : {}) });
   };
 
-  if (url.startsWith('http://')) add('ARTISYS-WEB-HTTPS-001', 'high', 'Target is served over HTTP instead of HTTPS.');
+  if (url.startsWith('http://') && !isLoopbackUrl(url)) add('ARTISYS-WEB-HTTPS-001', 'high', 'Target is served over HTTP instead of HTTPS.');
   if (!headerValue(headers, 'content-security-policy')) add('ARTISYS-WEB-CSP-001', 'medium', 'Content-Security-Policy header is missing.');
   if (url.startsWith('https://') && !headerValue(headers, 'strict-transport-security')) add('ARTISYS-WEB-HSTS-001', 'medium', 'HSTS header is missing on HTTPS response.');
   if (headerValue(headers, 'x-content-type-options')?.toLowerCase() !== 'nosniff') add('ARTISYS-WEB-NOSNIFF-001', 'low', 'X-Content-Type-Options: nosniff is missing.');
