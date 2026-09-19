@@ -29,8 +29,8 @@
 - [x] **16 — Release Gate:** PASS/WARN/BLOCK com política padrão e override configurável.
 - [x] **17 — Fleet Scanner:** múltiplos produtos, concorrência limitada, falha isolada e decisão agregada.
 - [x] **18 — Dashboard:** HTML/JSON estático com visão central PASS/WARN/BLOCK e findings por produto.
-- [ ] **19 — Woodpecker:** repo habilitado, webhook/status confirmado e workflows preparados para o agent Windows homologado; falta o primeiro `quick` concluir porque a fila atual aguarda disponibilidade do agent.
-- [ ] **20 — Migração operacional:** `push` já aponta para Woodpecker e PR/manual para Actions; conclusão depende do primeiro `quick` Woodpecker verde.
+- [x] **19 — Woodpecker:** repo habilitado, webhook/status confirmado e `quick` concluído com sucesso no agent Windows homologado.
+- [x] **20 — Migração operacional:** `push` confiável usa Woodpecker; PR/manual permanecem no GitHub Actions; fallback hospedado validado em Ubuntu e Windows.
 
 ## Estado operacional Woodpecker — 2026-09-18
 
@@ -42,7 +42,9 @@ backend=local
 pilot=pdv-artisys
 ```
 
-O status GitHub `ci/woodpecker/push/quick` confirma habilitação do repositório e webhook. O primeiro run permaneceu `pending`; `utilidades` também estava `pending` no mesmo período, enquanto o PDV já possui execução anterior com sucesso nesse agent. O launcher atual usa `WOODPECKER_MAX_WORKFLOWS=1`.
+O status GitHub `ci/woodpecker/push/quick` confirma habilitação do repositório, webhook e execução real. Após corrigir incompatibilidades Windows no entrypoint do CLI e em testes de caminhos, o `quick` terminou `success` no Woodpecker. O mesmo HEAD também passou no GitHub Actions em `ubuntu-latest` e `windows-latest`.
+
+O launcher atual usa `WOODPECKER_MAX_WORKFLOWS=1`, portanto o agent Windows processa um workflow por vez.
 
 ## Regra de segurança do discovery
 
