@@ -30,6 +30,29 @@ test('does not flag hardened Electron preferences as critical', () => {
   assert.equal(findings.some((finding) => finding.severity === 'critical'), false);
 });
 
+test('flags raw shell.openExternal without strict URL allowlisting', () => {
+  const source = `win.webContents.setWindowOpenHandler(({url}) => { shell.openExternal(url); return {action:'deny'}; });`;
+  const ids = analyzeElectronText('apps/desktop/main.mjs', source).map((finding) => finding.ruleId);
+  assert.ok(ids.includes('ARTISYS-ELECTRON-008'));
+});
+
+test('accepts shell.openExternal behind exact protocol and hostname URL allowlisting', () => {
+  const source = `
+    function isAllowedExternalUrl(raw) {
+      try {
+        const parsed = new URL(raw);
+        return parsed.protocol === 'https:' && parsed.hostname === 'wa.me' && /^\\/\\d+$/.test(parsed.pathname);
+      } catch { return false; }
+    }
+    win.webContents.setWindowOpenHandler(({url}) => {
+      if (isAllowedExternalUrl(url)) { void shell.openExternal(url); }
+      return {action:'deny'};
+    });
+  `;
+  const ids = analyzeElectronText('apps/desktop/main.mjs', source).map((finding) => finding.ruleId);
+  assert.ok(!ids.includes('ARTISYS-ELECTRON-008'));
+});
+
 test('flags tracked SQLite databases and obvious token persistence artifacts', () => {
   const findings = analyzeDesktopArtifacts([
     'data/customer.sqlite',
