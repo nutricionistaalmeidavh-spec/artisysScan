@@ -27,6 +27,24 @@ test('discovers an existing Playwright project without installing anything', asy
   assert.equal(discovery.installsDependencies, false);
 });
 
+test('prefers a product-owned qa:e2e wrapper that controls disposable setup and teardown', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'artisys-qa-owned-runner-'));
+  await writeFile(join(root, 'package.json'), JSON.stringify({
+    scripts: { 'qa:e2e': 'node scripts/qa-e2e.mjs' },
+    devDependencies: { '@playwright/test': '^1.58.2' },
+  }), 'utf8');
+  await writeFile(join(root, 'playwright.config.mjs'), 'export default {};', 'utf8');
+
+  const discovery = await discoverQaProject(root);
+  assert.equal(discovery.mode, 'script');
+  assert.equal(discovery.script, 'qa:e2e');
+
+  const plan = await createQaPlan(root, join(root, '.artisys', 'qa'));
+  assert.equal(plan.mode, 'script');
+  assert.deepEqual(plan.command.args, ['run', 'qa:e2e']);
+  assert.equal(plan.command.shell, false);
+});
+
 test('generated Playwright overlay forces failure evidence without replacing target config', () => {
   const root = '/tmp/product';
   const outputDir = '/tmp/qa-report';
