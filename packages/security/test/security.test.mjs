@@ -5,6 +5,7 @@ import test from 'node:test';
 import {
   createSourceSecurityPlan,
   normalizeSecurityOutput,
+  runSourceSecurity,
 } from '../src/index.ts';
 
 test('source security plan uses four open-source scanners without shell execution', () => {
@@ -41,6 +42,26 @@ test('source security plan uses four open-source scanners without shell executio
   assert.ok(osv.args.includes('--recursive'), 'OSV-Scanner v2 requires recursive mode for directory scans');
   assert.equal(osv.args.at(-1), '.', 'OSV must scan cwd with a relative target so Windows drive paths are not misparsed');
   assert.ok(!osv.args.includes(root), 'OSV target must not repeat the absolute cwd path');
+});
+
+test('OSV no package sources is not a source-security failure', async () => {
+  const report = await runSourceSecurity('/tmp/product', {
+    runner: async (command) => {
+      if (command.tool === 'semgrep') return { exitCode: 0, stdout: '{"results":[]}', stderr: '' };
+      if (command.tool === 'trivy') return { exitCode: 0, stdout: '{"Results":[]}', stderr: '' };
+      if (command.tool === 'gitleaks') return { exitCode: 0, stdout: '[]', stderr: '' };
+      return {
+        exitCode: 128,
+        stdout: '',
+        stderr: 'No package sources found, --help for usage information.',
+      };
+    },
+  });
+
+  const osv = report.tools.find((item) => item.tool === 'osv-scanner');
+  assert.equal(report.complete, true);
+  assert.equal(osv?.status, 'skipped');
+  assert.match(osv?.diagnostic ?? '', /No package sources found/i);
 });
 
 test('normalizes Semgrep, Trivy, Gitleaks and OSV into one finding contract', () => {
