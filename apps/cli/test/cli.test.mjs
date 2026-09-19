@@ -109,6 +109,25 @@ test('dashboard writes static fleet dashboard files', async () => {
   assert.ok(output.files.includes('dashboard.json'));
 });
 
+test('safe mode refuses project execution overrides before touching the target', () => {
+  const result = runCli(['installer', 'does-not-exist.json', '--safe', '--allow-project-exec', '--environment=staging']);
+
+  assert.equal(result.status, 2);
+  assert.match(result.stderr, /Safe mode blocks --allow-project-exec/);
+  assert.doesNotMatch(result.stderr, /ENOENT/);
+});
+
+test('production environment refuses active or state-changing overrides', () => {
+  const active = runCli(['web', 'https://example.invalid', '--allow-active', '--environment=production']);
+  assert.equal(active.status, 2);
+  assert.match(active.stderr, /Production environment blocks --allow-active/);
+
+  const stateChange = runCli(['api', 'does-not-exist.yml', '--allow-state-change', '--environment=production']);
+  assert.equal(stateChange.status, 2);
+  assert.match(stateChange.stderr, /Production environment blocks --allow-state-change/);
+  assert.doesNotMatch(stateChange.stderr, /ENOENT/);
+});
+
 test('unknown command exits non-zero and prints usage', () => {
   const result = runCli(['nope']);
 
