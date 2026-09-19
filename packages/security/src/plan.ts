@@ -41,7 +41,7 @@ export function createSourceSecurityPlan(
     {
       tool: 'osv-scanner',
       command: 'osv-scanner',
-      args: ['scan', 'source', '--format=json', '--recursive', cwd],
+      args: ['scan', 'source', '--format=json', '--recursive', '.'],
       cwd,
       shell: false,
     },
