@@ -31,8 +31,40 @@
 - [x] **18 — Dashboard:** HTML/JSON estático com visão central PASS/WARN/BLOCK e findings por produto.
 - [x] **19 — Woodpecker:** repo habilitado, webhook/status confirmado e `quick` concluído com sucesso no agent Windows homologado.
 - [x] **20 — Migração operacional:** `push` confiável usa Woodpecker; PR/manual permanecem no GitHub Actions; fallback hospedado validado em Ubuntu e Windows.
+- [x] **21 — Piloto seguro:** Loja Online adotada como alvo sem clientes; manifesto e fleet dedicados; produção e Obra na Mão excluídos da homologação.
+- [x] **22 — Safe Mode:** `--safe` e `--environment` bloqueiam execução do projeto, mutações, DAST e flags perigosas em ambientes incompatíveis.
+- [x] **23 — Scan estático real:** Discovery + Desktop + Semgrep + Trivy + Gitleaks + OSV + SBOM executados no Windows/Woodpecker com toolchain isolada fora do alvo.
+- [x] **24 — Calibração:** falsos positivos da toolchain removidos, OSV v2 compatibilizado e `shell.openExternal` homologado somente com URL parseada, HTTPS, hostname exato, pathname validado e default deny. Loja Online fechou com 0 critical/high/medium.
+- [x] **25 — Ambiente descartável:** runtime da Loja Online sobe em `127.0.0.1` com porta aleatória, diretório/banco temporário, licença e usuários fictícios; servidor e estado são destruídos em `finally`, inclusive em falha.
+- [x] **26 — Web dinâmico:** baseline, headers/CSP/cookies/CORS e reflexão ativa GET-only homologados contra o runtime descartável. HTTP é aceito somente para loopback; HTTP remoto continua finding HIGH.
+- [x] **27 — API dinâmica:** autenticação anônima e token inválido homologados contra endpoints reais do ambiente descartável, com tokens apenas em variáveis de ambiente. Casos mutáveis de invalid input/mass-assignment permanecem bloqueados até a fase específica de testes mutáveis.
+- [x] **28 — RBAC dinâmico:** matriz OWNER/ADMIN/MANAGER/SALES/READONLY homologada em rotas reais GET, cobrindo acessos permitidos e negados sem alteração de estado.
 
-## Estado operacional Woodpecker — 2026-09-18
+## Homologação Loja Online — 2026-09-19
+
+Pipeline Woodpecker homologado: `repos/17/pipeline/63`.
+
+Resultado final:
+
+```text
+manifest: pass
+static-scan: pass
+release-gate: pass
+critical: 0
+high: 0
+medium: 0
+low: 0
+info: 0
+desktop-calibration: pass
+dynamic-runtime: pass
+web-dynamic: pass
+api-dynamic: pass
+rbac-dynamic: pass
+```
+
+O ambiente dinâmico usa exclusivamente loopback e dados fictícios. Nenhum sistema com clientes, URL de produção ou banco de produção participou da homologação.
+
+## Estado operacional Woodpecker — 2026-09-19
 
 Labels do agent homologado:
 
@@ -42,9 +74,9 @@ backend=local
 pilot=pdv-artisys
 ```
 
-O status GitHub `ci/woodpecker/push/quick` confirma habilitação do repositório, webhook e execução real. Após corrigir incompatibilidades Windows no entrypoint do CLI e em testes de caminhos, o `quick` terminou `success` no Woodpecker. O mesmo HEAD também passou no GitHub Actions em `ubuntu-latest` e `windows-latest`.
+O status GitHub `ci/woodpecker/push/quick` confirma habilitação do repositório, webhook e execução real. As correções de calibração também passaram no scanner principal no agent Windows.
 
-O launcher atual usa `WOODPECKER_MAX_WORKFLOWS=1`, portanto o agent Windows processa um workflow por vez.
+O launcher atual usa `WOODPECKER_MAX_WORKFLOWS=1`, portanto o agent Windows processa um workflow por vez. Pushes mais novos podem cancelar pipelines de homologação anteriores; somente o HEAD final deve ser usado como evidência de conclusão.
 
 ## Regra de segurança do discovery
 
@@ -55,11 +87,14 @@ O discovery pode inferir tecnologias objetivamente observáveis, mas **não deve
 - Scans estáticos não executam código do sistema analisado.
 - QA E2E exige `--allow-project-exec` porque Playwright/scripts QA executam o projeto-alvo.
 - Web Scanner executa baseline e probe CORS por `GET`; a reflexão ativa só roda com `--allow-active`.
+- HTTP sem TLS só pode ser tratado como aceitável pelo Web Scanner quando o hostname é loopback (`127.0.0.1`, `localhost` ou equivalente IPv6); alvos HTTP remotos continuam HIGH.
 - O perfil `web --dast` executa ZAP Baseline em Docker; Nuclei só é incluído quando `--allow-active` também é fornecido.
 - API, RBAC, Multitenant e Admin/Superadmin não executam `POST`, `PUT`, `PATCH` ou `DELETE` sem `--allow-state-change`.
+- A homologação das fases 25–28 mantém API/RBAC em operações GET-only; testes mutáveis serão ativados apenas em ambiente descartável na fase correspondente.
 - Desktop/Electron é análise estática do projeto e não inicializa o aplicativo alvo.
+- `shell.openExternal` só é considerado endurecido quando há parsing de URL, protocolo HTTPS explícito, hostname exato, validação do pathname e bloqueio default da navegação externa.
 - O Installer Scanner só executa comandos declarados pelo produto quando `--allow-project-exec` é fornecido; os processos usam `shell: false`.
 - A inspeção de artefatos de update é estática. O cenário de update/restart/rollback usa um adapter explícito do ambiente de teste.
-- Tokens e credenciais não ficam no YAML. O contrato guarda somente nomes `tokenEnv`; os valores vêm de secrets do CI ou variáveis de ambiente locais.
+- Tokens e credenciais não ficam no YAML. O contrato guarda somente nomes `tokenEnv`; os valores vêm de secrets do CI ou variáveis de ambiente locais/temporárias.
 - Se uma etapa necessária é pulada ou uma credencial/ferramenta está ausente, o relatório fica `complete: false` em vez de declarar sucesso silenciosamente.
 - O backend Woodpecker `local` não recebe eventos de `pull_request` neste repositório público; PRs usam runner hospedado do GitHub Actions.
