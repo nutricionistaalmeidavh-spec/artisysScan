@@ -2,6 +2,7 @@ import type { FindingSeverity, SecurityFinding } from '../../security/src/types.
 
 export type SupplyChainTool = 'trivy' | 'osv-scanner';
 export type SupplyChainStep = 'sbom' | 'audit' | 'osv';
+export type SupplyChainStepStatus = 'ok' | 'findings' | 'unavailable' | 'error';
 
 export interface SupplyChainCommand {
   step: SupplyChainStep;
@@ -21,6 +22,14 @@ export interface SupplyChainCommandResult {
 }
 
 export type SupplyChainRunner = (command: SupplyChainCommand) => Promise<SupplyChainCommandResult>;
+
+export interface SupplyChainStepReport {
+  step: SupplyChainStep;
+  tool: SupplyChainTool;
+  status: SupplyChainStepStatus;
+  exitCode: number | null;
+  diagnostic?: string;
+}
 
 export interface DependencyVulnerability {
   id: string;
@@ -62,4 +71,5 @@ export interface SupplyChainReport {
   osvFindings: SecurityFinding[];
   artifacts: string[];
   diagnostics: string[];
+  steps: SupplyChainStepReport[];
 }
