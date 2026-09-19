@@ -34,7 +34,7 @@ export type CommandRunner = (command: SecurityCommand) => Promise<CommandResult>
 
 export interface SecurityToolReport {
   tool: SecurityTool;
-  status: 'ok' | 'findings' | 'unavailable' | 'error';
+  status: 'ok' | 'findings' | 'skipped' | 'unavailable' | 'error';
   exitCode: number | null;
   findings: SecurityFinding[];
   diagnostic?: string;
