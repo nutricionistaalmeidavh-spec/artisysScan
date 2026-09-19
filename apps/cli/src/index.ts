@@ -1,5 +1,6 @@
 import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { runAdminScan } from '../../../packages/admin/src/index.js';
 import { loadAccessPolicy } from '../../../packages/access-control/src/index.js';
@@ -263,6 +264,7 @@ export async function main(args: string[] = process.argv.slice(2)): Promise<numb
   }
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+const invokedPath = process.argv[1] ? resolve(process.argv[1]) : undefined;
+if (invokedPath && fileURLToPath(import.meta.url) === invokedPath) {
   process.exitCode = await main();
 }
