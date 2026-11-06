@@ -4,6 +4,8 @@ import { resolve, join } from 'node:path';
 const dir = resolve(process.argv[2] ?? 'audit-results');
 const names = ['impeccable','hallmark','security','supply-chain'];
 function load(name) {
+  const skip = join(dir, name + '.skip');
+  if (existsSync(skip)) return {status:'NOT_APPLICABLE',reason:readFileSync(skip,'utf8').trim() || 'No applicable source files'};
   const file = join(dir, name + '.exit');
   if (!existsSync(file)) return {status:'INCOMPLETE',reason:'Check did not run'};
   const code = Number(readFileSync(file,'utf8').trim());
@@ -13,7 +15,8 @@ function load(name) {
   }
   if (code === 0) return {status:'PASS',exit_code:0};
   if (name === 'impeccable' && code === 2) return {status:'WARN',exit_code:2,reason:'Deterministic design findings'};
-  if (name === 'hallmark') return {status:'WARN',exit_code:code,reason:'Hallmark sloplint findings or error; review evidence'};
+  if (name === 'hallmark' && code === 1) return {status:'WARN',exit_code:code,reason:'Hallmark sloplint findings; review evidence'};
+  if (name === 'hallmark') return {status:'INCOMPLETE',exit_code:code,reason:'Hallmark operational error; review stderr'};
   if (code === 3) return {status:'BLOCK',exit_code:code,reason:'Scanner found blocking findings'};
   if (code === 2) return {status:'INCOMPLETE',exit_code:code,reason:'Scanner reports missing coverage or tools'};
   return {status:'INCOMPLETE',exit_code:code,reason:'Unexpected scanner error'};
