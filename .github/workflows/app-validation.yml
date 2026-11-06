@@ -13,12 +13,12 @@ permissions:
   contents: read
 
 concurrency:
-  group: app-validation-\${{ github.ref }}
+  group: app-validation-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
   audit-app:
-    name: Audit \${{ matrix.repo }}
+    name: Audit ${{ matrix.repo }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
@@ -37,7 +37,7 @@ jobs:
           persist-credentials: false
       - name: Validate allowlisted repository
         env:
-          TARGET_REPO: \${{ matrix.repo }}
+          TARGET_REPO: ${{ matrix.repo }}
         run: |
           case "$TARGET_REPO" in
             nutricionistaalmeidavh-spec/PDV-ARTISYS|nutricionistaalmeidavh-spec/PDV-ARTISYS-TOTAL|nutricionistaalmeidavh-spec/ARTISYS_ERP|nutricionistaalmeidavh-spec/moneyPrintTest) ;;
@@ -46,7 +46,7 @@ jobs:
       - name: Checkout target source (never execute target code)
         uses: actions/checkout@v4
         with:
-          repository: \${{ matrix.repo }}
+          repository: ${{ matrix.repo }}
           path: target
           persist-credentials: false
       - name: Node.js 22
@@ -75,13 +75,13 @@ jobs:
       - name: Summarize exact coverage and failure states
         if: always()
         env:
-          TARGET_REPO: \${{ matrix.repo }}
+          TARGET_REPO: ${{ matrix.repo }}
         run: node scanner/scripts/app-validation/report.mjs audit-results
       - name: Upload audit report
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: app-validation-\${{ matrix.repo_id || strategy.job-index }}
+          name: app-validation-${{ strategy.job-index }}
           path: audit-results/
           if-no-files-found: warn
           retention-days: 7
