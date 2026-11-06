@@ -1,0 +1,91 @@
+name: ArtiSys App Validation (open source)
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "30 12 * * 1-5"
+  pull_request:
+    paths:
+      - ".github/workflows/app-validation.yml"
+      - "scripts/app-validation/**"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: app-validation-\${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  audit-app:
+    name: Audit \${{ matrix.repo }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        repo:
+          - nutricionistaalmeidavh-spec/PDV-ARTISYS
+          - nutricionistaalmeidavh-spec/PDV-ARTISYS-TOTAL
+          - nutricionistaalmeidavh-spec/ARTISYS_ERP
+          - nutricionistaalmeidavh-spec/moneyPrintTest
+    steps:
+      - name: Checkout trusted ArtiSys Scan
+        uses: actions/checkout@v4
+        with:
+          path: scanner
+          persist-credentials: false
+      - name: Validate allowlisted repository
+        env:
+          TARGET_REPO: \${{ matrix.repo }}
+        run: |
+          case "$TARGET_REPO" in
+            nutricionistaalmeidavh-spec/PDV-ARTISYS|nutricionistaalmeidavh-spec/PDV-ARTISYS-TOTAL|nutricionistaalmeidavh-spec/ARTISYS_ERP|nutricionistaalmeidavh-spec/moneyPrintTest) ;;
+            *) echo "Repository not allowlisted"; exit 1 ;;
+          esac
+      - name: Checkout target source (never execute target code)
+        uses: actions/checkout@v4
+        with:
+          repository: \${{ matrix.repo }}
+          path: target
+          persist-credentials: false
+      - name: Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install scanner dependencies only
+        working-directory: scanner
+        run: npm install --ignore-scripts --no-audit --no-fund
+      - name: Fetch Hallmark source checker
+        run: git clone --depth 1 https://github.com/Nutlope/hallmark.git tools/hallmark
+      - name: Run open-source source-level checks (no target execution)
+        shell: bash
+        run: |
+          mkdir -p audit-results
+          set +e
+          npx --yes impeccable detect --json ./target > audit-results/impeccable.json 2> audit-results/impeccable.stderr
+          echo "$?" > audit-results/impeccable.exit
+          node tools/hallmark/skills/hallmark/scripts/sloplint.mjs ./target --scope app --json > audit-results/hallmark.json 2> audit-results/hallmark.stderr
+          echo "$?" > audit-results/hallmark.exit
+          (cd scanner && npm run scan -- security ../target --safe) > audit-results/security.txt 2> audit-results/security.stderr
+          echo "$?" > audit-results/security.exit
+          (cd scanner && npm run scan -- supply-chain ../target ../audit-results/supply-chain --safe) > audit-results/supply-chain.txt 2> audit-results/supply-chain.stderr
+          echo "$?" > audit-results/supply-chain.exit
+          set -e
+      - name: Summarize exact coverage and failure states
+        if: always()
+        env:
+          TARGET_REPO: \${{ matrix.repo }}
+        run: node scanner/scripts/app-validation/report.mjs audit-results
+      - name: Upload audit report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-validation-\${{ matrix.repo_id || strategy.job-index }}
+          path: audit-results/
+          if-no-files-found: warn
+          retention-days: 7
+
+# Zero paid AI dependencies. No deployment, release publication, production DAST,
+# running target-provided scripts or secret access. Full Cloudflare agent skill
+# is NOT executed: report.mjs records it explicitly as NOT_RUN.
