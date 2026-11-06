@@ -17,10 +17,22 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  reporter-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Unit tests for PASS/WARN/BLOCK/INCOMPLETE semantics
+        run: node --test scripts/app-validation/report.test.mjs
+
   audit-app:
+    needs: reporter-tests
     name: Audit ${{ matrix.repo }}
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
@@ -56,17 +68,45 @@ jobs:
       - name: Install scanner dependencies only
         working-directory: scanner
         run: npm install --ignore-scripts --no-audit --no-fund
-      - name: Fetch Hallmark source checker
-        run: git clone --depth 1 https://github.com/Nutlope/hallmark.git tools/hallmark
+      - name: Install Trivy (official pinned setup action)
+        uses: aquasecurity/setup-trivy@e07451d2e059ed86c2870430ea286b3a9e0bf241
+        with:
+          version: v0.76.2
+      - name: Install Go for OSV Scanner CLI
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.2"
+      - name: Install free open-source scanners, with explicit versions
+        shell: bash
+        run: |
+          pipx install semgrep==1.182.0
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          mkdir -p "$HOME/.local/bin"
+          curl --fail --silent --show-error --location --retry 3 \
+            https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz \
+            -o "$RUNNER_TEMP/gitleaks.tar.gz"
+          echo "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb  $RUNNER_TEMP/gitleaks.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/gitleaks.tar.gz" -C "$HOME/.local/bin" gitleaks
+          go install github.com/google/osv-scanner/v2/cmd/osv-scanner@v2.7.0
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+      - name: Fetch pinned Hallmark source checker
+        run: |
+          git clone --filter=blob:none --no-checkout https://github.com/Nutlope/hallmark.git tools/hallmark
+          git -C tools/hallmark checkout --detach 407fa689f4a276f2fd389208d271d0fef08f5058
       - name: Run open-source source-level checks (no target execution)
         shell: bash
         run: |
           mkdir -p audit-results
           set +e
-          npx --yes impeccable detect --json ./target > audit-results/impeccable.json 2> audit-results/impeccable.stderr
-          echo "$?" > audit-results/impeccable.exit
-          node tools/hallmark/skills/hallmark/scripts/sloplint.mjs ./target --scope app --json > audit-results/hallmark.json 2> audit-results/hallmark.stderr
-          echo "$?" > audit-results/hallmark.exit
+          if find ./target -type f \( -name '*.html' -o -name '*.css' -o -name '*.jsx' -o -name '*.tsx' -o -name '*.vue' -o -name '*.svelte' -o -name '*.astro' \) -not -path '*/node_modules/*' | grep -q .; then
+            npx --yes impeccable@4.8.0 detect --json ./target > audit-results/impeccable.json 2> audit-results/impeccable.stderr
+            echo "$?" > audit-results/impeccable.exit
+            node tools/hallmark/skills/hallmark/scripts/sloplint.mjs ./target --scope app --json > audit-results/hallmark.json 2> audit-results/hallmark.stderr
+            echo "$?" > audit-results/hallmark.exit
+          else
+            echo 'No frontend source files (.html, .css, .jsx, .tsx, .vue, .svelte, .astro)' > audit-results/impeccable.skip
+            cp audit-results/impeccable.skip audit-results/hallmark.skip
+          fi
           (cd scanner && npm run scan -- security ../target --safe) > audit-results/security.txt 2> audit-results/security.stderr
           echo "$?" > audit-results/security.exit
           (cd scanner && npm run scan -- supply-chain ../target ../audit-results/supply-chain --safe) > audit-results/supply-chain.txt 2> audit-results/supply-chain.stderr
