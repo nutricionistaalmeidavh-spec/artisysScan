@@ -1,0 +1,128 @@
+name: ArtiSys Local Ollama Agent Audit (CPU, zero paid APIs)
+
+on:
+  workflow_dispatch:
+    inputs:
+      repository:
+        description: Public repository to inspect (allowlist)
+        type: choice
+        required: true
+        default: nutricionistaalmeidavh-spec/moneyPrintTest
+        options:
+          - nutricionistaalmeidavh-spec/moneyPrintTest
+          - nutricionistaalmeidavh-spec/PDV-ARTISYS
+          - nutricionistaalmeidavh-spec/PDV-ARTISYS-TOTAL
+          - nutricionistaalmeidavh-spec/ARTISYS_ERP
+  pull_request:
+    paths:
+      - .github/workflows/agent-ai-audit.yml
+      - scripts/app-validation/ai-audit.mjs
+      - scripts/app-validation/ai-audit.test.mjs
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ollama-agent-audit-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  agent-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: node --test scripts/app-validation/ai-audit.test.mjs
+
+  ollama-audit:
+    needs: agent-tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    steps:
+      - name: Checkout trusted audit orchestration
+        uses: actions/checkout@v4
+        with:
+          path: scanner
+          persist-credentials: false
+      - name: Select allowlisted source and CPU model
+        id: selection
+        shell: bash
+        env:
+          DISPATCH_REPO: ${{ inputs.repository }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          if [[ "$EVENT_NAME" == "pull_request" ]]; then
+            repo="nutricionistaalmeidavh-spec/moneyPrintTest"
+            model="qwen2.5-coder:0.5b"
+          else
+            repo="$DISPATCH_REPO"
+            model="qwen2.5-coder:1.5b"
+          fi
+          case "$repo" in
+            nutricionistaalmeidavh-spec/PDV-ARTISYS|nutricionistaalmeidavh-spec/PDV-ARTISYS-TOTAL|nutricionistaalmeidavh-spec/ARTISYS_ERP|nutricionistaalmeidavh-spec/moneyPrintTest) ;;
+            *) echo "Unapproved repository"; exit 1 ;;
+          esac
+          echo "repo=$repo" >> "$GITHUB_OUTPUT"
+          echo "model=$model" >> "$GITHUB_OUTPUT"
+      - name: Checkout public target (read-only; no target scripts)
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ steps.selection.outputs.repo }}
+          path: target
+          persist-credentials: false
+      - name: Runtime Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install pinned official Ollama release for CPU
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/ollama"
+          curl --fail --location --retry 3 --silent --show-error \
+            "https://github.com/ollama/ollama/releases/download/v0.34.0/ollama-linux-amd64.tar.zst" \
+            -o "$RUNNER_TEMP/ollama.tar.zst"
+          echo "cf95886728959aa09910bb34de5cca1cc5a8f68003b5597197d3f2c2d57c0804  $RUNNER_TEMP/ollama.tar.zst" | sha256sum -c -
+          tar --zstd -xf "$RUNNER_TEMP/ollama.tar.zst" -C "$RUNNER_TEMP/ollama"
+          "$RUNNER_TEMP/ollama/bin/ollama" --version
+      - name: Start local Ollama and fetch open model
+        shell: bash
+        env:
+          OLLAMA_HOST: 127.0.0.1:11434
+          OLLAMA_MODELS: ${{ runner.temp }}/ollama-models
+          OLLAMA_NUM_PARALLEL: "1"
+          OLLAMA_MAX_LOADED_MODELS: "1"
+          OLLAMA_NOHISTORY: "1"
+          MODEL: ${{ steps.selection.outputs.model }}
+        run: |
+          set -euo pipefail
+          "$RUNNER_TEMP/ollama/bin/ollama" serve > "$RUNNER_TEMP/ollama.log" 2>&1 &
+          ready=0
+          for _ in $(seq 1 45); do
+            if curl --fail --silent "http://127.0.0.1:11434/api/tags" >/dev/null; then ready=1; break; fi
+            sleep 2
+          done
+          if [[ "$ready" != "1" ]]; then echo "Local Ollama did not start"; exit 1; fi
+          "$RUNNER_TEMP/ollama/bin/ollama" pull "$MODEL"
+      - name: Run bounded, local-only AI audit (partial coverage)
+        shell: bash
+        env:
+          MODEL: ${{ steps.selection.outputs.model }}
+        run: |
+          set -euo pipefail
+          export TARGET_SHA="$(git -C target rev-parse HEAD)"
+          node scanner/scripts/app-validation/ai-audit.mjs target artifacts/ollama-audit "$MODEL"
+      - name: Upload source-only audit evidence (not a release)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ollama-source-only-${{ github.run_id }}
+          path: artifacts/ollama-audit/
+          if-no-files-found: warn
+          retention-days: 7
+
+# Bounded source review only. Cloudflare six-phase independent audit NOT claimed.
+# No app execution, paid LLM API, live probing, deployment, or automatic merge.

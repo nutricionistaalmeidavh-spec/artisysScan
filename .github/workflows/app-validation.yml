@@ -1,0 +1,131 @@
+name: ArtiSys App Validation (open source)
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "30 12 * * 1-5"
+  pull_request:
+    paths:
+      - ".github/workflows/app-validation.yml"
+      - "scripts/app-validation/**"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: app-validation-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  reporter-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Unit tests for PASS/WARN/BLOCK/INCOMPLETE semantics
+        run: node --test scripts/app-validation/report.test.mjs
+
+  audit-app:
+    needs: reporter-tests
+    name: Audit ${{ matrix.repo }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        repo:
+          - nutricionistaalmeidavh-spec/PDV-ARTISYS
+          - nutricionistaalmeidavh-spec/PDV-ARTISYS-TOTAL
+          - nutricionistaalmeidavh-spec/ARTISYS_ERP
+          - nutricionistaalmeidavh-spec/moneyPrintTest
+    steps:
+      - name: Checkout trusted ArtiSys Scan
+        uses: actions/checkout@v4
+        with:
+          path: scanner
+          persist-credentials: false
+      - name: Validate allowlisted repository
+        env:
+          TARGET_REPO: ${{ matrix.repo }}
+        run: |
+          case "$TARGET_REPO" in
+            nutricionistaalmeidavh-spec/PDV-ARTISYS|nutricionistaalmeidavh-spec/PDV-ARTISYS-TOTAL|nutricionistaalmeidavh-spec/ARTISYS_ERP|nutricionistaalmeidavh-spec/moneyPrintTest) ;;
+            *) echo "Repository not allowlisted"; exit 1 ;;
+          esac
+      - name: Checkout target source (never execute target code)
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ matrix.repo }}
+          path: target
+          persist-credentials: false
+      - name: Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install scanner dependencies only
+        working-directory: scanner
+        run: npm install --ignore-scripts --no-audit --no-fund
+      - name: Install Trivy (official pinned setup action)
+        uses: aquasecurity/setup-trivy@e07451d2e059ed86c2870430ea286b3a9e0bf241
+        with:
+          version: v0.76.2
+      - name: Install Go for OSV Scanner CLI
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.2"
+      - name: Install free open-source scanners, with explicit versions
+        shell: bash
+        run: |
+          pipx install semgrep==1.182.0
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          mkdir -p "$HOME/.local/bin"
+          curl --fail --silent --show-error --location --retry 3 \
+            https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz \
+            -o "$RUNNER_TEMP/gitleaks.tar.gz"
+          echo "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb  $RUNNER_TEMP/gitleaks.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/gitleaks.tar.gz" -C "$HOME/.local/bin" gitleaks
+          go install github.com/google/osv-scanner/v2/cmd/osv-scanner@v2.7.0
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+      - name: Fetch pinned Hallmark source checker
+        run: |
+          git clone --filter=blob:none --no-checkout https://github.com/Nutlope/hallmark.git tools/hallmark
+          git -C tools/hallmark checkout --detach 407fa689f4a276f2fd389208d271d0fef08f5058
+      - name: Run open-source source-level checks (no target execution)
+        shell: bash
+        run: |
+          mkdir -p audit-results
+          set +e
+          if find ./target -type f \( -name '*.html' -o -name '*.css' -o -name '*.jsx' -o -name '*.tsx' -o -name '*.vue' -o -name '*.svelte' -o -name '*.astro' \) -not -path '*/node_modules/*' | grep -q .; then
+            npx --yes impeccable@4.8.0 detect --json ./target > audit-results/impeccable.json 2> audit-results/impeccable.stderr
+            echo "$?" > audit-results/impeccable.exit
+            node tools/hallmark/skills/hallmark/scripts/sloplint.mjs ./target --scope app --json > audit-results/hallmark.json 2> audit-results/hallmark.stderr
+            echo "$?" > audit-results/hallmark.exit
+          else
+            echo 'No frontend source files (.html, .css, .jsx, .tsx, .vue, .svelte, .astro)' > audit-results/impeccable.skip
+            cp audit-results/impeccable.skip audit-results/hallmark.skip
+          fi
+          (cd scanner && npm run scan -- security ../target --safe) > audit-results/security.txt 2> audit-results/security.stderr
+          echo "$?" > audit-results/security.exit
+          (cd scanner && npm run scan -- supply-chain ../target ../audit-results/supply-chain --safe) > audit-results/supply-chain.txt 2> audit-results/supply-chain.stderr
+          echo "$?" > audit-results/supply-chain.exit
+          set -e
+      - name: Summarize exact coverage and failure states
+        if: always()
+        env:
+          TARGET_REPO: ${{ matrix.repo }}
+        run: node scanner/scripts/app-validation/report.mjs audit-results
+      - name: Upload audit report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-validation-${{ strategy.job-index }}
+          path: audit-results/
+          if-no-files-found: warn
+          retention-days: 7
+
+# Zero paid AI dependencies. No deployment, release publication, production DAST,
+# running target-provided scripts or secret access. Full Cloudflare agent skill
+# is NOT executed: report.mjs records it explicitly as NOT_RUN.
