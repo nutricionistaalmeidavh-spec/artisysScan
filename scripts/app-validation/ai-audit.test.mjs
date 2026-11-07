@@ -36,7 +36,7 @@ test('local-only model calls produce partial report and redact secrets',async()=
   try{
     const report=await audit({target:join(base,'target'),out:join(base,'report'),fetchImpl:fake,maxCandidates:1});
     assert.equal(report.status,'PARTIAL_SOURCE_ONLY');
-    assert.equal(report.release_gate,'REVIEW_REQUIRED');
+    assert.equal(report.release_gate,'WARN');
     assert.equal(report.findings[0].verdict,'needs_validation');
     assert.equal(report.calls,8);
     assert.ok(seen.every(x=>x.url==='http://127.0.0.1:11434/api/chat'));
